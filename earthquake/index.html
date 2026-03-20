@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>地牛 Wake Up! (Web版)</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            font-family: "Microsoft JhengHei", Arial, sans-serif;
+            background-color: #2b2b2b;
+        }
+
+        .qk-window {
+            flex: 1;
+            display: flex;
+            flex-direction: row;
+            background: #fff;
+            overflow: hidden;
+        }
+        
+        .qk-left { 
+            flex: 1; 
+            background: #5c8bb5; 
+            position: relative; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            overflow: hidden; 
+        }
+        
+        .qk-map-svg { 
+            width: 100%; 
+            height: 95%; 
+            opacity: 0.95; 
+        }
+
+        .qk-epicenter-marker { 
+            position: absolute; 
+            color: red; 
+            font-size: 2.5rem; 
+            transform: translate(-50%, -50%); 
+            animation: pulse 1s infinite; 
+            text-shadow: 0 0 5px white; 
+            display: none;
+            z-index: 10;
+        }
+        
+        .qk-local-marker { 
+            position: absolute; 
+            top: 14.2%; 
+            left: 59.3%; 
+            color: red; 
+            font-size: 2rem; 
+            transform: translate(-50%, -50%); 
+            font-weight: bold; 
+            text-shadow: 0 0 5px white; 
+            z-index: 10;
+        }
+        
+        .qk-right { 
+            width: 360px; 
+            background: #f9f9f9; 
+            display: flex; 
+            flex-direction: column; 
+            border-left: 2px solid #555; 
+        }
+        
+        .qk-tabs { 
+            display: flex; 
+            border-bottom: 2px solid #ddd; 
+            background: #eee; 
+        }
+        
+        .qk-tab { 
+            flex: 1; 
+            text-align: center; 
+            padding: 12px 0; 
+            font-weight: bold; 
+            font-size: 1.1rem; 
+            color: #666; 
+            cursor: pointer; 
+        }
+        
+        .qk-tab.active { 
+            background: #fff; 
+            color: #cc0000; 
+            border-top: 4px solid #cc0000; 
+            margin-top: -4px; 
+        }
+        
+        .qk-info-box { 
+            padding: 15px 20px; 
+            border-bottom: 1px solid #ddd; 
+        }
+        
+        .qk-info-title { 
+            text-align: center; 
+            font-size: 1.4rem; 
+            margin: 0 0 15px 0; 
+            font-weight: bold; 
+            color: #222; 
+            letter-spacing: 2px;
+        }
+        
+        .qk-grid { 
+            display: grid; 
+            grid-template-columns: 80px 1fr; 
+            gap: 10px; 
+            font-size: 1rem; 
+        }
+        
+        .qk-label { 
+            color: #555; 
+            text-align: right; 
+            padding-right: 10px; 
+        }
+        
+        .qk-value { 
+            color: #000; 
+            font-weight: 500; 
+        }
+        
+        .qk-local { 
+            padding: 20px; 
+            flex: 1; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            background: #fff; 
+        }
+        
+        .qk-local-flex { 
+            display: flex; 
+            width: 100%; 
+            justify-content: space-around; 
+            margin-top: 15px; 
+        }
+        
+        .qk-local-item { 
+            text-align: center; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+        }
+        
+        .qk-local-head { 
+            font-size: 1.2rem; 
+            color: #555; 
+            margin-bottom: 5px; 
+        }
+        
+        .qk-local-num { 
+            font-size: 5rem; 
+            font-weight: bold; 
+            color: #333; 
+            line-height: 1; 
+            display: flex; 
+            align-items: baseline; 
+        }
+        
+        .qk-local-unit { 
+            font-size: 1.5rem; 
+            color: #ccc; 
+            margin-left: 5px; 
+            font-weight: normal; 
+        }
+        
+        .qk-table-wrapper { 
+            height: 140px; 
+            background: #fff; 
+            border-top: 1px solid #ddd; 
+            overflow-y: auto; 
+            font-size: 0.85rem; 
+        }
+        
+        .qk-table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            text-align: center; 
+        }
+        
+        .qk-table th { 
+            background: #eee; 
+            padding: 8px; 
+            border-bottom: 1px solid #ccc; 
+            color: #555; 
+            font-weight: bold; 
+        }
+        
+        .qk-table td { 
+            padding: 8px; 
+            border-bottom: 1px solid #eee; 
+            color: #333; 
+        }
+
+        .qk-table tr:nth-child(even) {
+            background-color: #fafafa;
+        }
+
+        .legend-box {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #333;
+            font-size: 0.8rem;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .color-box {
+            width: 15px;
+            height: 15px;
+            border: 1px solid #000;
+        }
+
+        .btn-test {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            padding: 10px 15px;
+            background: #0061a4;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            z-index: 20;
+        }
+
+        @keyframes pulse {
+            0% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+            50% { transform: translate(-50%, -50%) scale(1.3); opacity: 0.7; }
+            100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+        }
+
+        footer { 
+            background: #fff;
+            text-align: center;
+            padding: 15px; 
+            font-size: 0.85rem; 
+            opacity: 0.8;
+            border-top: 1px solid #ddd;
+        }
+        footer a { color: #0061a4; text-decoration: none; font-weight: bold; cursor: pointer;}
+    </style>
+</head>
+<body>
+    <button class="btn-test" onclick="fetchPalertData()">強制重新抓取中研院資料</button>
+
+    <div class="qk-window">
+        <div class="qk-left">
+            <svg class="qk-map-svg" viewBox="0 0 300 400">
+                <g id="taiwan-map">
+                    <polygon points="180,50 200,65 210,80 230,120 220,180 180,260 160,330 140,360 120,380 110,360 110,320 90,260 70,180 80,130 110,90 140,60" fill="#a8e6cf" stroke="#333" stroke-width="1.5"/>
+                    <polygon points="140,60 110,90 130,120 150,110" fill="#a8e6cf" stroke="#333" stroke-width="0.5"/>
+                    <polygon points="110,90 80,130 100,150 130,120" fill="#a8e6cf" stroke="#333" stroke-width="0.5"/>
+                    <polygon points="80,130 70,180 110,190 100,150" fill="#a8e6cf" stroke="#333" stroke-width="0.5"/>
+                    <polygon points="150,110 130,120 100,150 110,190 150,220 180,190 220,180 230,120 210,80 200,65 180,50 140,60" fill="#3cb371" stroke="#333" stroke-width="0.5" id="zone-east"/>
+                    <polygon points="110,190 70,180 90,260 110,320 130,280 150,220" fill="#a8e6cf" stroke="#333" stroke-width="0.5"/>
+                    <polygon points="150,220 130,280 110,320 110,360 120,380 140,360 160,330 180,260 180,190" fill="#a8e6cf" stroke="#333" stroke-width="0.5" id="zone-south"/>
+                </g>
+                <circle cx="210" cy="110" r="40" fill="none" stroke="yellow" stroke-width="2" opacity="0.5" id="p-wave" style="display:none;"/>
+            </svg>
+            
+            <div class="qk-epicenter-marker" id="epicenter-icon">🎯</div>
+            <div class="qk-local-marker" title="您的位置: 八德區">✖</div>
+            
+            <div class="legend-box">
+                <div class="legend-item"><div class="color-box" style="background: #a8e6cf;"></div> 1-2 級</div>
+                <div class="legend-item"><div class="color-box" style="background: #3cb371;"></div> 3-4 級</div>
+                <div class="legend-item"><div class="color-box" style="background: #ffcc00;"></div> 5 弱-5 強</div>
+                <div class="legend-item"><div class="color-box" style="background: #ff6600;"></div> 6 弱-6 強</div>
+                <div class="legend-item"><div class="color-box" style="background: #cc0000;"></div> 7 級</div>
+            </div>
+        </div>
+        
+        <div class="qk-right">
+            <div class="qk-tabs">
+                <div class="qk-tab active">強震即時警報</div>
+                <div class="qk-tab">地震報告</div>
+            </div>
+            <div class="qk-info-box">
+                <h3 class="qk-info-title">震央</h3>
+                <div class="qk-grid">
+                    <div class="qk-label">時間</div><div class="qk-value" id="qk-time">等待連線中...</div>
+                    <div class="qk-label">位置</div><div class="qk-value" id="qk-loc">--</div>
+                    <div class="qk-label">深度</div><div class="qk-value" id="qk-depth">-- 公里</div>
+                    <div class="qk-label">規模</div><div class="qk-value" id="qk-mag">--</div>
+                    <div class="qk-label">最大震度</div><div class="qk-value" id="qk-max-int">--</div>
+                </div>
+            </div>
+            <div class="qk-local">
+                <h3 class="qk-info-title" style="margin-bottom: 5px;">所在地</h3>
+                <div class="qk-local-flex">
+                    <div class="qk-local-item">
+                        <div class="qk-local-head">震度</div>
+                        <div class="qk-local-num"><span id="qk-int">0</span><span class="qk-local-unit">級</span></div>
+                    </div>
+                    <div class="qk-local-item">
+                        <div class="qk-local-head">抵達</div>
+                        <div class="qk-local-num"><span id="qk-arr">0</span><span class="qk-local-unit">秒</span></div>
+                    </div>
+                </div>
+            </div>
+            <div class="qk-table-wrapper">
+                <table class="qk-table">
+                    <thead>
+                        <tr>
+                            <th>編號</th>
+                            <th>發佈時間</th>
+                            <th>規模</th>
+                        </tr>
+                    </thead>
+                    <tbody id="qk-table-body">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        版權所有 © 2026 <a href="https://pandapanda6666.github.io" target="_blank">PandaPanda的AI日常</a> All Rights Reserved.
+    </footer>
+
+    <script>
+        let countdownTimer = null;
+        let currentSeconds = 0;
+
+        async function fetchPalertData() {
+            document.getElementById('qk-time').textContent = "連線中研院伺服器...";
+            document.getElementById('qk-loc').textContent = "--";
+            document.getElementById('qk-depth').textContent = "-- 公里";
+            document.getElementById('qk-mag').textContent = "--";
+            document.getElementById('qk-max-int').textContent = "--";
+            document.getElementById('qk-int').textContent = "0";
+            document.getElementById('qk-arr').textContent = "0";
+            document.getElementById('epicenter-icon').style.display = 'none';
+            document.getElementById('p-wave').style.display = 'none';
+            
+            const query = `query ($date: [Date!], $depth: [Float!], $ml: [Float!], $dateTime: DateTime, $needHaspga: Boolean!) {
+              eventList(
+                QueryEvent: {depth: $depth, date: $date, ml: $ml, dateTime: $dateTime}
+                needHaspga: $needHaspga
+              ) {
+                DateUTC
+                Depth
+                Latitude
+                Longitude
+                ML
+                hasPGA @include(if: $needHaspga)
+              }
+            }`;
+
+            const today = new Date();
+            const past = new Date();
+            past.setDate(today.getDate() - 30);
+            
+            const d1 = past.toISOString().split('T')[0];
+            const d2 = today.toISOString().split('T')[0];
+
+            const variables = {
+                date: [d1, d2],
+                ml: [0, 10],
+                depth: [0, 1000],
+                needHaspga: true
+            };
+
+            try {
+                let res;
+                try {
+                    res = await fetch('https://palert.earth.sinica.edu.tw/graphql', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ query, variables })
+                    });
+                } catch(err) {
+                    console.warn("直接連線受阻，嘗試透過 CORS Proxy...", err);
+                    const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent('https://palert.earth.sinica.edu.tw/graphql');
+                    res = await fetch(proxyUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ query, variables })
+                    });
+                }
+                
+                if (!res.ok) throw new Error("HTTP 狀態碼錯誤: " + res.status);
+                const json = await res.json();
+                
+                if (json.data && json.data.eventList && json.data.eventList.length > 0) {
+                    const events = json.data.eventList.sort((a, b) => new Date(b.DateUTC) - new Date(a.DateUTC));
+                    const latest = events[0];
+                    processRealQuakeData(latest, events);
+                } else {
+                    document.getElementById('qk-time').textContent = "近期無顯著地震資料";
+                }
+            } catch(e) {
+                console.error("連線徹底失敗:", e);
+                document.getElementById('qk-time').textContent = "伺服器連線失敗，請稍後再試";
+            }
+        }
+
+        function processRealQuakeData(data, allEvents) {
+            const date = new Date(data.DateUTC);
+            // 加上 8 小時轉換為台灣時間
+            date.setHours(date.getHours() + 8);
+            
+            const timeStr = `${date.getFullYear()}年${String(date.getMonth()+1).padStart(2,'0')}月${String(date.getDate()).padStart(2,'0')}日 ${String(date.getHours()).padStart(2,'0')}時${String(date.getMinutes()).padStart(2,'0')}分${String(date.getSeconds()).padStart(2,'0')}秒`;
+            
+            document.getElementById('qk-time').textContent = timeStr;
+            document.getElementById('qk-loc').textContent = `北緯 ${data.Latitude.toFixed(2)}度\n東經 ${data.Longitude.toFixed(2)}度`;
+            document.getElementById('qk-depth').textContent = `${data.Depth.toFixed(1)} 公里`;
+            document.getElementById('qk-mag').textContent = data.ML.toFixed(1);
+            
+            // 台灣經緯度映射到簡易 SVG 上
+            const mapX = ((data.Longitude - 119.5) / 3.0) * 100; 
+            const mapY = ((25.5 - data.Latitude) / 4.0) * 100; 
+
+            const epiIcon = document.getElementById('epicenter-icon');
+            epiIcon.style.display = 'block';
+            epiIcon.style.left = `${mapX}%`;
+            epiIcon.style.top = `${mapY}%`;
+
+            // 所在地：桃園市八德區經緯度
+            const myLat = 24.93;
+            const myLng = 121.28;
+            
+            const distDeg = Math.sqrt(Math.pow(data.Latitude - myLat, 2) + Math.pow(data.Longitude - myLng, 2));
+            const distKm = distDeg * 111;
+            
+            let estInt = Math.round(data.ML * 1.5 - distKm / 40);
+            if (estInt < 0) estInt = 0;
+            if (estInt > 7) estInt = 7;
+            
+            let maxInt = Math.ceil(data.ML * 1.2);
+            if (maxInt > 7) maxInt = 7;
+            
+            document.getElementById('qk-max-int').textContent = `${maxInt} 級 (估計)`;
+            document.getElementById('qk-int').textContent = estInt;
+            document.getElementById('qk-int').style.color = getIntensityColor(estInt);
+            document.getElementById('zone-east').setAttribute('fill', getIntensityMapColor(maxInt));
+
+            const now = new Date();
+            const diffSeconds = Math.floor((now - date) / 1000);
+            const totalTravelTime = Math.floor(distKm / 3.5);
+            let remain = totalTravelTime - diffSeconds;
+            if (remain < 0) remain = 0;
+
+            currentSeconds = remain;
+            document.getElementById('qk-arr').textContent = currentSeconds;
+
+            if(countdownTimer) clearInterval(countdownTimer);
+            if (currentSeconds > 0) {
+                countdownTimer = setInterval(() => {
+                    if(currentSeconds > 0) {
+                        currentSeconds--;
+                        document.getElementById('qk-arr').textContent = currentSeconds;
+                        const pwave = document.getElementById('p-wave');
+                        pwave.style.display = 'block';
+                        pwave.setAttribute('r', 40 + (totalTravelTime - currentSeconds) * 5);
+                    } else {
+                        clearInterval(countdownTimer);
+                        document.getElementById('p-wave').style.display = 'none';
+                        document.getElementById('qk-arr').style.color = '#cc0000';
+                    }
+                }, 1000);
+            } else {
+                 document.getElementById('p-wave').style.display = 'none';
+            }
+
+            const tbody = document.getElementById('qk-table-body');
+            tbody.innerHTML = '';
+            allEvents.slice(0, 5).forEach((f, idx) => {
+                const d = new Date(f.DateUTC);
+                d.setHours(d.getHours() + 8);
+                const ts = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+                const row = `<tr>
+                    <td>${idx + 1}</td>
+                    <td>${ts}</td>
+                    <td>${f.ML.toFixed(1)}</td>
+                </tr>`;
+                tbody.innerHTML += row;
+            });
+        }
+
+        function getIntensityColor(intensity) {
+            const intValue = parseInt(intensity);
+            if (intValue >= 7) return '#cc0000';
+            if (intValue >= 5) return '#ffcc00';
+            if (intValue >= 3) return '#3cb371';
+            return '#333';
+        }
+
+        function getIntensityMapColor(intensity) {
+            const intValue = parseInt(intensity);
+            if (intValue >= 7) return '#cc0000';
+            if (intValue >= 5) return '#ffcc00';
+            if (intValue >= 3) return '#3cb371';
+            return '#a8e6cf';
+        }
+
+        window.onload = () => {
+            fetchPalertData();
+            setInterval(fetchPalertData, 180000);
+        };
+    </script>
+</body>
+</html>
