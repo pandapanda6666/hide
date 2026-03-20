@@ -1,5 +1,4 @@
 (function() {
-    // JSON 部分：直接寫在 JS 的變數裡
     let myntConfig = {
         name: "PandaPanda",
         inputMode: "search",
@@ -17,14 +16,12 @@
         todos: []
     };
 
-    // 防止重複執行，再次點擊即可隱藏或顯示
     if (document.getElementById('mynt-ai-home-iframe')) {
         const existing = document.getElementById('mynt-ai-home-iframe');
         existing.style.display = existing.style.display === 'none' ? 'block' : 'none';
         return;
     }
 
-    // HTML 部分：用 JS 動態建立一個 iframe 塞進網頁
     const iframe = document.createElement('iframe');
     iframe.id = 'mynt-ai-home-iframe';
     iframe.style.position = 'fixed';
@@ -32,12 +29,12 @@
     iframe.style.left = '0';
     iframe.style.width = '100vw';
     iframe.style.height = '100vh';
-    iframe.style.zIndex = '2147483647'; // 確保覆蓋在最上層
+    iframe.style.zIndex = '2147483647';
     iframe.style.border = 'none';
     iframe.style.backgroundColor = '#fdfcff';
     document.body.appendChild(iframe);
 
-    const doc = iframe.contentDocument;
+    const doc = iframe.contentDocument || iframe.contentWindow.document;
     doc.open();
     doc.write(`
         <!DOCTYPE html>
@@ -186,7 +183,6 @@
                 input[type="text"], select { width: 100%; padding: 10px 15px; border-radius: 12px; border: 1px solid var(--m3-outline); background: rgba(255,255,255,0.05); color: inherit; box-sizing: border-box; font-size: 0.95rem; outline: none; }
                 input[type="color"] { width: 100%; height: 45px; border: none; border-radius: 12px; cursor: pointer; padding: 0; background: none; }
 
-                /* 地牛 Wake Up 風格地震儀表板 CSS */
                 #quake-dashboard { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(5px); justify-content: center; align-items: center; z-index: 2000; }
                 .qk-window { width: 850px; height: 550px; background: #fff; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 15px 50px rgba(0,0,0,0.3); font-family: "Microsoft JhengHei", Arial, sans-serif; color: #333; }
                 .qk-header { background: #444; color: #fff; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; font-size: 0.95rem; }
@@ -261,9 +257,9 @@
                     </div>
 
                     <div class="ai-hub">
-                        <a href="https://gemini.google.com" target="_blank" class="ai-card"><span class="icon-gemini"></span> Gemini</a>
-                        <a href="https://chatgpt.com" target="_blank" class="ai-card"><span class="icon-chatgpt">●</span> ChatGPT</a>
-                        <a href="https://www.perplexity.ai" target="_blank" class="ai-card">Perplexity</a>
+                        <a href="https://gemini.google.com" target="_top" class="ai-card"><span class="icon-gemini"></span> Gemini</a>
+                        <a href="https://chatgpt.com" target="_top" class="ai-card"><span class="icon-chatgpt">●</span> ChatGPT</a>
+                        <a href="https://www.perplexity.ai" target="_top" class="ai-card">Perplexity</a>
                     </div>
                 </div>
 
@@ -297,7 +293,7 @@
                 </div>
 
                 <footer>
-                    版權所有 © 2026 <a href="https://pandapanda6666.github.io" target="_blank">PandaPanda的AI日常</a> All Rights Reserved.
+                    版權所有 © 2026 <a href="https://pandapanda6666.github.io" target="_top">PandaPanda的AI日常</a> All Rights Reserved.
                 </footer>
             </div>
 
@@ -367,7 +363,6 @@
                 </div>
             </div>
 
-            <!-- 地牛 Wake Up 風格地震儀表板 -->
             <div id="quake-dashboard">
                 <div class="qk-window">
                     <div class="qk-header">
@@ -451,7 +446,6 @@
     `);
     doc.close();
 
-    // JS 部分：原本的邏輯 (完全使用 doc 替代 document 操作 iframe 內的元素)
     let previousTimeStr = "";
     let settledBlocks = []; 
     let pieceQueue = []; 
@@ -849,10 +843,14 @@
                 const latitude = pos.coords.latitude;
                 const longitude = pos.coords.longitude;
                 fetch("https://api.open-meteo.com/v1/forecast?latitude=" + latitude + "&longitude=" + longitude + "&current_weather=true")
-                    .then(r => r.json()).then(data => {
+                    .then(r => r.json())
+                    .then(data => {
                         doc.getElementById('temp').textContent = Math.round(data.current_weather.temperature) + "°";
                         doc.getElementById('weather-desc').textContent = "天氣穩定";
-                    });
+                    })
+                    .catch(err => console.log("天氣抓取被阻擋", err));
+            }, () => {
+                console.log("定位失敗或被阻擋");
             });
         }
     }
@@ -914,14 +912,13 @@
             }
         } catch(e) {
             console.error("連線徹底失敗:", e);
-            // 當網頁 CSP 完全阻擋任何向外連線時，會進入這個捕獲區塊
             doc.getElementById('qk-time').textContent = "連線失敗 (請於一般網頁如維基百科點擊書籤)";
         }
     }
 
     function processRealQuakeData(data, allEvents) {
         const date = new Date(data.DateUTC);
-        date.setHours(date.getHours() + 8); // UTC轉換為台灣時間
+        date.setHours(date.getHours() + 8); 
         
         const timeStr = date.getFullYear() + "年" + String(date.getMonth()+1).padStart(2,'0') + "月" + String(date.getDate()).padStart(2,'0') + "日 " + String(date.getHours()).padStart(2,'0') + "時" + String(date.getMinutes()).padStart(2,'0') + "分" + String(date.getSeconds()).padStart(2,'0') + "秒";
         
@@ -1032,7 +1029,6 @@
             
             if (myntConfig.inputMode === 'search') {
                 if (myntConfig.engine === 'google-ai') {
-                    // 改用 window.top 讓主視窗跳轉，避免卡在 iframe 裡面
                     window.top.location.href = "https://www.google.com/search?udm=50&q=" + encodeURIComponent(q);
                 } else {
                     const urls = { 
@@ -1139,6 +1135,7 @@
         myntConfig.shortcuts.forEach((s, i) => {
             const item = document.createElement('a');
             item.href = s.url;
+            item.target = "_top";
             item.className = 'shortcut-item';
             
             const iconDiv = document.createElement('div');
@@ -1166,7 +1163,6 @@
         });
     }
 
-    // 當 iframe 載入完畢，啟動所有功能
     initApp();
     initEnvironment();
     setupEvents();
