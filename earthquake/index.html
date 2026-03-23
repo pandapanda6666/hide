@@ -352,19 +352,7 @@
             document.getElementById('epicenter-icon').style.display = 'none';
             document.getElementById('p-wave').style.display = 'none';
             
-            const query = `query ($date: [Date!], $depth: [Float!], $ml: [Float!], $dateTime: DateTime, $needHaspga: Boolean!) {
-              eventList(
-                QueryEvent: {depth: $depth, date: $date, ml: $ml, dateTime: $dateTime}
-                needHaspga: $needHaspga
-              ) {
-                DateUTC
-                Depth
-                Latitude
-                Longitude
-                ML
-                hasPGA @include(if: $needHaspga)
-              }
-            }`;
+            const query = "query ($date: [Date!], $depth: [Float!], $ml: [Float!], $dateTime: DateTime, $needHaspga: Boolean!) { eventList( QueryEvent: {depth: $depth, date: $date, ml: $ml, dateTime: $dateTime} needHaspga: $needHaspga ) { DateUTC Depth Latitude Longitude ML hasPGA @include(if: $needHaspga) } }";
 
             const today = new Date();
             const past = new Date();
@@ -383,22 +371,22 @@
             try {
                 let res;
                 try {
+                    // 先嘗試直接連線
                     res = await fetch('https://palert.earth.sinica.edu.tw/graphql', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ query, variables })
+                        body: JSON.stringify({ query: query, variables: variables })
                     });
+                    if (!res.ok) throw new Error("Direct POST Failed");
                 } catch(err) {
-                    console.warn("直接連線受阻，嘗試透過 CORS Proxy...", err);
-                    const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent('https://palert.earth.sinica.edu.tw/graphql');
-                    res = await fetch(proxyUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ query, variables })
-                    });
+                    // 若被 GitHub Pages CORS 阻擋，自動轉換為 GET 請求並透過 allorigins 代理
+                    console.log("切換至代理伺服器模式...");
+                    const targetUrl = 'https://palert.earth.sinica.edu.tw/graphql?query=' + encodeURIComponent(query) + '&variables=' + encodeURIComponent(JSON.stringify(variables));
+                    const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(targetUrl);
+                    res = await fetch(proxyUrl);
                 }
                 
-                if (!res.ok) throw new Error("HTTP 狀態碼錯誤: " + res.status);
+                if (!res.ok) throw new Error("HTTP狀態碼錯誤: " + res.status);
                 const json = await res.json();
                 
                 if (json.data && json.data.eventList && json.data.eventList.length > 0) {
@@ -409,8 +397,9 @@
                     document.getElementById('qk-time').textContent = "近期無顯著地震資料";
                 }
             } catch(e) {
-                console.error("連線徹底失敗:", e);
-                document.getElementById('qk-time').textContent = "伺服器連線失敗，請稍後再試";
+                console.error("連線錯誤:", e);
+                document.getElementById('qk-time').textContent = "網路斷線或伺服器異常";
+                document.getElementById('qk-time').style.color = "#cc0000";
             }
         }
 
@@ -419,11 +408,14 @@
             // 加上 8 小時轉換為台灣時間
             date.setHours(date.getHours() + 8);
             
-            const timeStr = `${date.getFullYear()}年${String(date.getMonth()+1).padStart(2,'0')}月${String(date.getDate()).padStart(2,'0')}日 ${String(date.getHours()).padStart(2,'0')}時${String(date.getMinutes()).padStart(2,'0')}分${String(date.getSeconds()).padStart(2,'0')}秒`;
+            const timeStr = date.getFullYear() + "年" + String(date.getMonth()+1).padStart(2,'0') + "月" + String(date.getDate()).padStart(2,'0') + "日 " + String(date.getHours()).padStart(2,'0') + "時" + String(date.getMinutes()).padStart(2,'0') + "分" + String(date.getSeconds()).padStart(2,'0') + "秒";
             
-            document.getElementById('qk-time').textContent = timeStr;
-            document.getElementById('qk-loc').textContent = `北緯 ${data.Latitude.toFixed(2)}度\n東經 ${data.Longitude.toFixed(2)}度`;
-            document.getElementById('qk-depth').textContent = `${data.Depth.toFixed(1)} 公里`;
+            const timeLabel = document.getElementById('qk-time');
+            timeLabel.textContent = timeStr;
+            timeLabel.style.color = "#000";
+            
+            document.getElementById('qk-loc').innerHTML = "北緯 " + data.Latitude.toFixed(2) + "度<br>東經 " + data.Longitude.toFixed(2) + "度";
+            document.getElementById('qk-depth').textContent = data.Depth.toFixed(1) + " 公里";
             document.getElementById('qk-mag').textContent = data.ML.toFixed(1);
             
             // 台灣經緯度映射到簡易 SVG 上
@@ -432,8 +424,8 @@
 
             const epiIcon = document.getElementById('epicenter-icon');
             epiIcon.style.display = 'block';
-            epiIcon.style.left = `${mapX}%`;
-            epiIcon.style.top = `${mapY}%`;
+            epiIcon.style.left = mapX + "%";
+            epiIcon.style.top = mapY + "%";
 
             // 所在地：桃園市八德區經緯度
             const myLat = 24.93;
@@ -449,7 +441,7 @@
             let maxInt = Math.ceil(data.ML * 1.2);
             if (maxInt > 7) maxInt = 7;
             
-            document.getElementById('qk-max-int').textContent = `${maxInt} 級 (估計)`;
+            document.getElementById('qk-max-int').textContent = maxInt + " 級 (估計)";
             document.getElementById('qk-int').textContent = estInt;
             document.getElementById('qk-int').style.color = getIntensityColor(estInt);
             document.getElementById('zone-east').setAttribute('fill', getIntensityMapColor(maxInt));
@@ -487,13 +479,10 @@
             allEvents.slice(0, 5).forEach((f, idx) => {
                 const d = new Date(f.DateUTC);
                 d.setHours(d.getHours() + 8);
-                const ts = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
-                const row = `<tr>
-                    <td>${idx + 1}</td>
-                    <td>${ts}</td>
-                    <td>${f.ML.toFixed(1)}</td>
-                </tr>`;
-                tbody.innerHTML += row;
+                const ts = String(d.getHours()).padStart(2,'0') + ":" + String(d.getMinutes()).padStart(2,'0') + ":" + String(d.getSeconds()).padStart(2,'0');
+                const row = document.createElement('tr');
+                row.innerHTML = "<td>" + (idx + 1) + "</td><td>" + ts + "</td><td>" + f.ML.toFixed(1) + "</td>";
+                tbody.appendChild(row);
             });
         }
 
@@ -515,6 +504,7 @@
 
         window.onload = () => {
             fetchPalertData();
+            // 每三分鐘重新抓取一次
             setInterval(fetchPalertData, 180000);
         };
     </script>
