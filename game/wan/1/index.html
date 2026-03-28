@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>灌籃高手風格投籃 - 熱血大亂鬥版</title>
+    <style>
+        :root {
+            --shohoku-red: #b91c1c;
+            --shohoku-black: #111827;
+            --skin-tone: #ffdbac;
+            --hair-red: #dc2626;
+            --court-wood: #f59e0b;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: var(--shohoku-black);
+            font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+            color: white;
+            user-select: none;
+            touch-action: none;
+        }
+
+        /* 遊戲介面樣式 */
+        #ui-layer {
+            position: absolute;
+            top: 20px;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-around;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .stat-box {
+            background: rgba(185, 28, 28, 0.4);
+            padding: 10px 25px;
+            border-radius: 4px;
+            border: 2px solid var(--shohoku-red);
+            backdrop-filter: blur(8px);
+            text-align: center;
+        }
+
+        .stat-label { font-size: 14px; font-weight: bold; }
+        .stat-value { font-size: 32px; font-weight: 900; }
+
+        #msg-box {
+            position: absolute;
+            top: 35%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 60px;
+            font-weight: 900;
+            color: #fff;
+            text-shadow: 4px 4px 0px var(--shohoku-red);
+            pointer-events: none;
+            opacity: 0;
+            text-align: center;
+            z-index: 20;
+            transition: opacity 0.3s;
+        }
+
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div class="stat-box">
+            <div class="stat-label">總得分</div>
+            <div id="score" class="stat-value">0</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">最高紀錄</div>
+            <div id="high-score" class="stat-value">0</div>
+        </div>
+    </div>
+
+    <div id="msg-box">
+        <span id="main-msg">好痛！</span>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score');
+    const highScoreEl = document.getElementById('high-score');
+    const msgBox = document.getElementById('msg-box');
+    const mainMsg = document.getElementById('main-msg');
+
+    let gameActive = true; // 預設為 true，移除驗證流程
+    const GRAVITY = 0.52;
+    const FRICTION = 0.72; 
+    const BALL_RADIUS = 24;
+    const RIM_WIDTH = 105;
+    
+    let width, height, score = 0;
+    let highScore = localStorage.getItem('slamDunkHighScore') || 0;
+    highScoreEl.innerText = highScore;
+
+    let isDragging = false;
+    let dragStart = { x: 0, y: 0 }, dragCurrent = { x: 0, y: 0 };
+
+    // 頭部物理物件
+    const headObj = {
+        x: 0, y: 0, vx: 0, vy: 0, angle: 0, vAngle: 0,
+        isFlying: false,
+        reset() {
+            this.isFlying = false;
+            this.vx = 0; this.vy = 0; this.angle = 0; this.vAngle = 0;
+        }
+    };
+
+    const player = {
+        x: 220, y: 0, jumpOffset: 0,
+        update() {
+            this.y = height - 160;
+            if (isDragging) {
+                this.jumpOffset = 10;
+            } else if (ball.inAir && ball.active) {
+                this.jumpOffset = -30;
+            } else {
+                this.jumpOffset = 0;
+            }
+        },
+        draw() {
+            const py = this.y + this.jumpOffset;
+            
+            // 地板反射
+            ctx.save();
+            ctx.translate(this.x, height - 100);
+            ctx.scale(1, -0.3);
+            ctx.globalAlpha = 0.2;
+            this.drawBody(0);
+            if (!headObj.isFlying) this.drawHead(0);
+            ctx.restore();
+
+            // 本體
+            ctx.save();
+            ctx.translate(this.x, py);
+            this.drawBody(this.jumpOffset);
+            if (!headObj.isFlying) {
+                this.drawHead(this.jumpOffset);
+                // 更新頭部檢測位置 (世界座標)
+                headObj.worldX = this.x;
+                headObj.worldY = py - 30;
+            }
+            ctx.restore();
+        },
+        drawBody(jumpOff) {
+            // 腳
+            ctx.fillStyle = '#ffdbac';
+            ctx.fillRect(-20, 60, 12, 50);
+            ctx.fillRect(8, 60, 12, 50);
+            // 身體
+            ctx.fillStyle = '#b91c1c';
+            ctx.beginPath(); ctx.roundRect(-28, 0, 56, 80, 8); ctx.fill();
+            ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.strokeRect(-28, 0, 56, 80);
+            ctx.fillStyle = 'white'; ctx.font = 'bold 26px Impact'; ctx.textAlign = 'center';
+            ctx.fillText('10', 0, 48); 
+            // 手
+            ctx.strokeStyle = '#ffdbac'; ctx.lineWidth = 16; ctx.lineCap = 'round';
+            ctx.beginPath(); ctx.moveTo(22, 15); 
+            if (isDragging) ctx.lineTo(40, -50);
+            else if (ball.inAir && ball.active) ctx.lineTo(45, -75);
+            else ctx.lineTo(40, 50);
+            ctx.stroke();
+        },
+        drawHead(jumpOff) {
+            ctx.save();
+            ctx.translate(0, -30);
+            this.renderHeadContent();
+            ctx.restore();
+        },
+        renderHeadContent() {
+            ctx.fillStyle = '#ffdbac';
+            ctx.beginPath(); ctx.arc(0, 0, 28, 0, Math.PI * 2); ctx.fill();
+            // 寸頭
+            ctx.fillStyle = '#dc2626';
+            ctx.beginPath(); ctx.arc(0, -3, 29, Math.PI, 0); ctx.fill();
+            // 五官
+            ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(-15, -10); ctx.lineTo(-5, -11); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(15, -10); ctx.lineTo(5, -11); ctx.stroke();
+            ctx.fillStyle = '#000';
+            ctx.beginPath(); ctx.arc(-8, -3, 2.5, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(8, -3, 2.5, 0, Math.PI*2); ctx.fill();
+        }
+    };
+
+    const ball = {
+        x: 0, y: 0, vx: 0, vy: 0, active: false, inAir: false, angle: 0,
+        reset() { this.active = true; this.inAir = false; this.vx = 0; this.vy = 0; this.angle = 0; }
+    };
+
+    const hoop = {
+        x: 0, y: 0, backboardX: 0,
+        init() { this.x = width - 350; this.y = height * 0.35; this.backboardX = width - 200; }
+    };
+
+    function resize() {
+        width = window.innerWidth; height = window.innerHeight;
+        canvas.width = width; canvas.height = height;
+        hoop.init(); ball.reset();
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    canvas.addEventListener('mousedown', e => { if(!gameActive || ball.inAir) return; isDragging = true; dragStart = { x: e.clientX, y: e.clientY }; dragCurrent = { x: e.clientX, y: e.clientY }; });
+    window.addEventListener('mousemove', e => { if(isDragging) dragCurrent = { x: e.clientX, y: e.clientY }; });
+    window.addEventListener('mouseup', () => {
+        if (!isDragging) return; isDragging = false;
+        const dx = (dragStart.x - dragCurrent.x), dy = (dragStart.y - dragCurrent.y);
+        if (Math.hypot(dx, dy) < 20) return;
+        ball.vx = dx * 0.135; ball.vy = dy * 0.135; ball.inAir = true;
+    });
+
+    // 繪製軌跡預測
+    function drawTrajectory() {
+        const dx = (dragStart.x - dragCurrent.x) * 0.135;
+        const dy = (dragStart.y - dragCurrent.y) * 0.135;
+        let tx = ball.x, ty = ball.y, tvx = dx, tvy = dy;
+        
+        ctx.save();
+        ctx.beginPath();
+        ctx.setLineDash([6, 10]);
+        ctx.moveTo(tx, ty);
+        for (let i = 0; i < 20; i++) {
+            tvy += GRAVITY;
+            tx += tvx;
+            ty += tvy;
+            ctx.lineTo(tx, ty);
+        }
+        ctx.strokeStyle = 'rgba(251, 146, 60, 0.5)';
+        ctx.lineWidth = 4;
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    function update() {
+        if (!gameActive) return;
+        player.update();
+
+        // 處理飛出的頭部
+        if (headObj.isFlying) {
+            headObj.vy += GRAVITY;
+            headObj.x += headObj.vx;
+            headObj.y += headObj.vy;
+            headObj.angle += headObj.vAngle;
+            if (headObj.y > height + 200) headObj.reset();
+        }
+
+        if (ball.inAir) {
+            ball.vy += GRAVITY; ball.x += ball.vx; ball.y += ball.vy; ball.angle += ball.vx * 0.05;
+
+            // 碰撞檢測：頭部被砸
+            if (!headObj.isFlying && Math.hypot(ball.x - headObj.worldX, ball.y - headObj.worldY) < 45) {
+                headObj.isFlying = true;
+                headObj.x = headObj.worldX;
+                headObj.y = headObj.worldY;
+                headObj.vx = ball.vx * 0.8 + (Math.random() - 0.5) * 5;
+                headObj.vy = ball.vy * 0.5 - 10;
+                headObj.vAngle = (Math.random() - 0.5) * 0.5;
+                ball.vx *= -0.5; ball.vy *= -0.5;
+                mainMsg.innerText = "痛死了啦！";
+                msgBox.style.opacity = '1';
+                setTimeout(() => msgBox.style.opacity = '0', 1000);
+            }
+
+            if (ball.y > height + 100 || ball.x > width + 150) ball.reset();
+            if (ball.x + 24 > hoop.backboardX && ball.y > hoop.y - 150 && ball.y < hoop.y + 100) { ball.x = hoop.backboardX - 26; ball.vx *= -FRICTION; }
+            if (ball.active && ball.vy > 0 && ball.y > hoop.y && ball.y < hoop.y + 40 && ball.x > hoop.x + 5 && ball.x < hoop.x + 100) {
+                score++; scoreEl.innerText = score;
+                if (score > highScore) { highScore = score; highScoreEl.innerText = highScore; localStorage.setItem('slamDunkHighScore', highScore); }
+                ball.active = false;
+                mainMsg.innerText = "空心入網！";
+                msgBox.style.opacity = '1';
+                setTimeout(() => msgBox.style.opacity = '0', 1000);
+            }
+        } else {
+            ball.x = player.x + 40; ball.y = player.y + player.jumpOffset - (isDragging ? 55 : 10);
+        }
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, width, height);
+        
+        // 背景與地板
+        const grad = ctx.createLinearGradient(0, 0, 0, height);
+        grad.addColorStop(0, '#0f172a'); grad.addColorStop(1, '#1e293b');
+        ctx.fillStyle = grad; ctx.fillRect(0, 0, width, height);
+        ctx.fillStyle = '#b45309'; ctx.fillRect(0, height-120, width, 120);
+        ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(0, height-120, width, 5);
+
+        if (isDragging) drawTrajectory();
+
+        // 籃架
+        ctx.fillStyle = '#fff'; ctx.fillRect(hoop.backboardX, hoop.y - 150, 20, 220);
+        ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 10; ctx.strokeRect(hoop.x, hoop.y, RIM_WIDTH, 1);
+
+        player.draw();
+
+        // 繪製飛出的頭
+        if (headObj.isFlying) {
+            ctx.save();
+            ctx.translate(headObj.x, headObj.y);
+            ctx.rotate(headObj.angle);
+            player.renderHeadContent();
+            ctx.restore();
+        }
+
+        // 籃球
+        ctx.save(); ctx.translate(ball.x, ball.y); ctx.rotate(ball.angle);
+        const bG = ctx.createRadialGradient(-8,-8,2,0,0,24); bG.addColorStop(0, '#fb923c'); bG.addColorStop(1, '#7c2d12');
+        ctx.fillStyle = bG; ctx.beginPath(); ctx.arc(0,0,24,0,Math.PI*2); ctx.fill();
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
+
+        update();
+        requestAnimationFrame(draw);
+    }
+    draw();
+</script>
+</body>
+</html>
