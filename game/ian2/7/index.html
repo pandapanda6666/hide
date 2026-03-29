@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>音樂節奏貓咪接冰淇淋 - Flower Dance 版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            touch-action: none;
+        }
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        canvas {
+            display: block;
+        }
+        .ui-layer {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            pointer-events: none;
+            color: #fff;
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 0 0 10px rgba(255, 105, 180, 0.8);
+        }
+        #overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            z-index: 10;
+            text-align: center;
+            padding: 20px;
+        }
+        .btn {
+            background: linear-gradient(45deg, #ff85a1, #fbb6ce);
+            color: #4a0404;
+            padding: 15px 50px;
+            border-radius: 40px;
+            font-size: 24px;
+            cursor: pointer;
+            border: none;
+            margin-top: 30px;
+            transition: all 0.3s;
+            pointer-events: auto;
+            box-shadow: 0 0 20px rgba(255, 182, 193, 0.6);
+            font-weight: bold;
+        }
+        .btn:hover {
+            transform: scale(1.1);
+            filter: brightness(1.1);
+        }
+        .song-info {
+            color: #ffb7c5;
+            font-style: italic;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+    
+    <div class="ui-layer">
+        <div class="mb-2 text-pink-300">得分: <span id="scoreVal">0</span></div>
+        <div>生命: <span id="livesVal">❤️❤️❤️</span></div>
+    </div>
+
+    <div id="overlay">
+        <div class="mb-6">
+            <span class="text-8xl">🌸🐱</span>
+        </div>
+        <h1 id="title" class="text-5xl font-black mb-4 italic text-pink-200">Flower Dance</h1>
+        <p class="song-info">1=G 12/8 J=180</p>
+        <p id="message" class="text-white mb-8">跟著鋼琴旋律，優雅地接住冰淇淋吧</p>
+        
+        <button id="startBtn" class="btn">開始演出</button>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreVal = document.getElementById('scoreVal');
+    const livesVal = document.getElementById('livesVal');
+    const overlay = document.getElementById('overlay');
+    const startBtn = document.getElementById('startBtn');
+
+    // 遊戲參數
+    const CAT_SIZE = 90;
+    const ITEM_SIZE = 50;
+    
+    let gameState = 'START';
+    let score = 0;
+    let lives = 3;
+    let items = [];
+    let particles = []; // 櫻花粒子
+    
+    // 音樂引擎
+    let audioCtx;
+    let analyser;
+    let dataArray;
+    const BPM = 180;
+    const SEC_PER_BEAT = 60 / BPM;
+
+    // Flower Dance 主旋律頻率
+    const notes = {
+        '1': 261.63, '2': 293.66, '3': 329.63, '4': 349.23, '5': 392.00, '6': 440.00, '7': 493.88,
+        'i': 523.25, '2.': 587.33, '3.': 659.25
+    };
+    
+    const melody = [
+        '2', '2', '3', '3', '4', '3', '2', '1',
+        '2', '2', '3', '3', '4', '3', '2', '1',
+        '5', '5', 'i', 'i', '7', '6', '5', '4',
+        '3', '3', '6', '6', '5', '4', '3', '2'
+    ];
+
+    const cat = {
+        x: 0,
+        y: 0,
+        width: CAT_SIZE,
+        height: CAT_SIZE,
+        isJumping: false
+    };
+
+    const itemTypes = ['🍦', '🍧', '🍨', '🍰', '🌸'];
+
+    function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        cat.y = canvas.height - CAT_SIZE - 40;
+        if (gameState === 'START') cat.x = canvas.width / 2 - CAT_SIZE / 2;
+    }
+
+    window.addEventListener('resize', resize);
+    resize();
+
+    // 控制
+    canvas.addEventListener('mousemove', (e) => {
+        if (gameState !== 'PLAYING') return;
+        cat.x = e.clientX - cat.width / 2;
+        if (cat.x < 0) cat.x = 0;
+        if (cat.x > canvas.width - cat.width) cat.x = canvas.width - cat.width;
+    });
+
+    canvas.addEventListener('touchmove', (e) => {
+        if (gameState !== 'PLAYING') return;
+        e.preventDefault();
+        cat.x = e.touches[0].clientX - cat.width / 2;
+        if (cat.x < 0) cat.x = 0;
+        if (cat.x > canvas.width - cat.width) cat.x = canvas.width - cat.width;
+    }, { passive: false });
+
+    function initAudio() {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 64;
+        dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+        let beatIndex = 0;
+
+        const playMelodyLoop = () => {
+            if (gameState !== 'PLAYING') return;
+            const now = audioCtx.currentTime;
+
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            const noteChar = melody[beatIndex % melody.length];
+            
+            osc.frequency.setValueAtTime(notes[noteChar], now);
+            osc.type = 'sine';
+            g.gain.setValueAtTime(0.15, now);
+            g.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+            
+            osc.connect(g);
+            g.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(now + 0.2);
+
+            if (beatIndex % 4 === 0) {
+                const kick = audioCtx.createOscillator();
+                const kickG = audioCtx.createGain();
+                kick.frequency.setValueAtTime(60, now);
+                kick.frequency.exponentialRampToValueAtTime(0.01, now + 0.3);
+                kickG.gain.setValueAtTime(0.3, now);
+                kickG.gain.linearRampToValueAtTime(0, now + 0.3);
+                kick.connect(kickG);
+                kickG.connect(analyser);
+                analyser.connect(audioCtx.destination);
+                kick.start();
+                kick.stop(now + 0.3);
+                
+                spawnItem();
+            }
+
+            beatIndex++;
+            setTimeout(playMelodyLoop, (SEC_PER_BEAT * 1000) / 2);
+        };
+
+        playMelodyLoop();
+    }
+
+    function spawnItem() {
+        items.push({
+            x: Math.random() * (canvas.width - ITEM_SIZE),
+            y: -ITEM_SIZE,
+            emoji: itemTypes[Math.floor(Math.random() * itemTypes.length)],
+            speed: 5 + Math.random() * 3,
+            rot: 0,
+            rotSpeed: (Math.random() - 0.5) * 0.1
+        });
+    }
+
+    function spawnParticle() {
+        if (particles.length > 50) return;
+        particles.push({
+            x: Math.random() * canvas.width,
+            y: -10,
+            size: Math.random() * 5 + 2,
+            speedX: (Math.random() - 0.5) * 2,
+            speedY: Math.random() * 2 + 1,
+            color: `rgba(255, ${180 + Math.random() * 75}, ${200 + Math.random() * 55}, 0.6)`
+        });
+    }
+
+    function update() {
+        if (gameState !== 'PLAYING') return;
+
+        if (Math.random() > 0.9) spawnParticle();
+
+        for (let i = particles.length - 1; i >= 0; i--) {
+            const p = particles[i];
+            p.y += p.speedY;
+            p.x += p.speedX;
+            if (p.y > canvas.height) particles.splice(i, 1);
+        }
+
+        for (let i = items.length - 1; i >= 0; i--) {
+            const item = items[i];
+            item.y += item.speed;
+            item.rot += item.rotSpeed;
+
+            if (
+                item.y + ITEM_SIZE > cat.y &&
+                item.y < cat.y + 40 &&
+                item.x + ITEM_SIZE > cat.x &&
+                item.x < cat.x + cat.width
+            ) {
+                score += 10;
+                scoreVal.textContent = score;
+                items.splice(i, 1);
+                cat.isJumping = true;
+                setTimeout(() => cat.isJumping = false, 100);
+                continue;
+            }
+
+            if (item.y > canvas.height) {
+                items.splice(i, 1);
+                lives--;
+                updateLivesDisplay();
+                if (lives <= 0) gameOver();
+            }
+        }
+
+        draw();
+        requestAnimationFrame(update);
+    }
+
+    function updateLivesDisplay() {
+        livesVal.textContent = '❤️'.repeat(lives);
+    }
+
+    function draw() {
+        const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+        grad.addColorStop(0, '#1a0a1a');
+        grad.addColorStop(1, '#3d1a3d');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        particles.forEach(p => {
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        const catY = cat.isJumping ? cat.y - 15 : cat.y;
+        ctx.font = `${CAT_SIZE}px serif`;
+        ctx.textBaseline = 'top';
+        ctx.fillText('🐱', cat.x, catY);
+
+        ctx.font = `${ITEM_SIZE}px serif`;
+        items.forEach(item => {
+            ctx.save();
+            ctx.translate(item.x + ITEM_SIZE/2, item.y + ITEM_SIZE/2);
+            ctx.rotate(item.rot);
+            ctx.fillText(item.emoji, -ITEM_SIZE/2, -ITEM_SIZE/2);
+            ctx.restore();
+        });
+    }
+
+    function gameOver() {
+        gameState = 'GAMEOVER';
+        overlay.style.display = 'flex';
+        document.getElementById('title').textContent = '演奏結束';
+        document.getElementById('message').textContent = `得分：${score}`;
+        startBtn.textContent = '再次演出';
+        if (audioCtx) audioCtx.close();
+    }
+
+    function startGame() {
+        score = 0;
+        lives = 3;
+        items = [];
+        particles = [];
+        scoreVal.textContent = score;
+        updateLivesDisplay();
+        gameState = 'PLAYING';
+        overlay.style.display = 'none';
+        initAudio();
+        requestAnimationFrame(update);
+    }
+
+    startBtn.addEventListener('click', () => {
+        if (audioCtx) audioCtx.close();
+        startGame();
+    });
+
+    draw();
+</script>
+
+</body>
+</html>
