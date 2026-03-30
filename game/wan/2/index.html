@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D 校園逃脫 - 無密碼版</title>
+    <title>3D 校園逃脫</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #050000; font-family: "Segoe UI", "Microsoft JhengHei", sans-serif; }
         
@@ -127,6 +127,7 @@
     <script type="importmap">
         {
             "imports": {
+                "onefile": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
                 "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
                 "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
             }
@@ -192,9 +193,9 @@
             goldPorcelain: new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8, roughness: 0.2 }),
             redPorcelain: new THREE.MeshStandardMaterial({ color: 0xaa0000, roughness: 0.1 }),
             wood: new THREE.MeshStandardMaterial({ color: 0x2d1b0f, roughness: 0.8 }),
-            street: new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.8 }), // 雪地街道
-            towerMat: new THREE.MeshStandardMaterial({ color: 0x3d2b1f, metalness: 0.5, roughness: 0.3 }),
-            snowMat: new THREE.PointsMaterial({ color: 0xffffff, size: 0.12, transparent: true, opacity: 0.8 })
+            street: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 }), // 雪地街道
+            towerMat: new THREE.MeshStandardMaterial({ color: 0x332211, metalness: 0.5, roughness: 0.2 }),
+            snowMat: new THREE.PointsMaterial({ color: 0xffffff, size: 0.1, transparent: true, opacity: 0.8 })
         };
 
         const mapGroup = new THREE.Group();
@@ -280,34 +281,34 @@
 
         function buildParis() {
             mapGroup.clear(); 
-            scene.background = new THREE.Color(0xcceeff); 
-            scene.fog = new THREE.Fog(0xffffff, 20, 150);
+            scene.background = new THREE.Color(0xddeeff); 
+            scene.fog = new THREE.Fog(0xffffff, 10, 150);
             
-            ambientLight.intensity = 1.0; 
-            hemiLight.intensity = 1.5; 
-            flashLight.intensity = 0.3;
+            ambientLight.intensity = 1.2; 
+            hemiLight.intensity = 1.8; 
+            flashLight.intensity = 0.2;
 
             // 地面
             const street = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1000), mats.street);
             street.rotation.x = -Math.PI/2; 
             mapGroup.add(street);
 
-            // 巴黎鐵塔
+            // 修正：巴黎鐵塔 (使用三個圓錐體疊加)
             const tower = new THREE.Group();
-            const s1 = new THREE.Mesh(new THREE.CylinderGeometry(4, 10, 15, 4), mats.towerMat);
-            s1.position.y = 7.5; tower.add(s1);
-            const s2 = new THREE.Mesh(new THREE.CylinderGeometry(2, 4, 15, 4), mats.towerMat);
-            s2.position.y = 22.5; tower.add(s2);
-            const s3 = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 1, 25, 4), mats.towerMat);
-            s3.position.y = 42.5; tower.add(s3);
+            const section1 = new THREE.Mesh(new THREE.CylinderGeometry(2, 8, 15, 4), mats.towerMat);
+            section1.position.y = 7.5; tower.add(section1);
+            const section2 = new THREE.Mesh(new THREE.CylinderGeometry(1, 4, 15, 4), mats.towerMat);
+            section2.position.y = 22.5; tower.add(section2);
+            const section3 = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 1, 20, 4), mats.towerMat);
+            section3.position.y = 40; tower.add(section3);
             
-            tower.position.set(0, 0, -80); 
+            tower.position.set(0, 0, -100); // 放在相機前方 100 單位處
             mapGroup.add(tower);
 
             // 雪花
             const snowGeo = new THREE.BufferGeometry();
             const snowPos = [];
-            for(let i=0; i<6000; i++) {
+            for(let i=0; i<5000; i++) {
                 snowPos.push((Math.random()-0.5)*200, Math.random()*100, (Math.random()-0.5)*200);
             }
             snowGeo.setAttribute('position', new THREE.Float32BufferAttribute(snowPos, 3));
@@ -316,18 +317,18 @@
 
             document.getElementById('hud').style.display = 'none';
             document.getElementById('ending-text').style.display = 'block';
-            camera.position.set(0, eyeHeight, 30); 
-            camera.lookAt(0, 15, -80);
+            camera.position.set(0, eyeHeight, 20); // 相機拉遠一點看全景
+            camera.lookAt(0, 10, -100);
         }
 
         buildFloor();
         const controls = new PointerLockControls(camera, document.body);
         
-        // --- 直接開始邏輯 (移除驗證碼) ---
+        // --- 開始遊戲邏輯 ---
         const startBtn = document.getElementById('start-btn');
 
         startBtn.addEventListener('click', () => {
-            controls.lock();
+            controls.lock(); // 直接鎖定游標開始遊戲，無須密碼
         });
 
         controls.addEventListener('lock', () => {
@@ -398,9 +399,10 @@
                     if (camera.position.z < -25) resetLevel(!hasAnomaly);
                     if (camera.position.z > 15) resetLevel(hasAnomaly);
                 } else if (snowParticles) {
+                    // 下雪動畫
                     const positions = snowParticles.geometry.attributes.position.array;
                     for (let i = 1; i < positions.length; i += 3) {
-                        positions[i] -= dt * 6;
+                        positions[i] -= dt * 5;
                         if (positions[i] < 0) positions[i] = 100;
                     }
                     snowParticles.geometry.attributes.position.needsUpdate = true;
