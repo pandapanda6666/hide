@@ -3,13 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>灌籃高手風格投籃 - 熱血大亂鬥版</title>
+    <title>灌籃高手風格投籃 - Slam Dunk Edition</title>
     <style>
         :root {
             --shohoku-red: #b91c1c;
             --shohoku-black: #111827;
             --skin-tone: #ffdbac;
             --hair-red: #dc2626;
+            --hair-dark: #991b1b;
             --court-wood: #f59e0b;
         }
 
@@ -24,7 +25,7 @@
             touch-action: none;
         }
 
-        /* 遊戲介面樣式 */
+        /* 原有遊戲介面樣式 */
         #ui-layer {
             position: absolute;
             top: 20px;
@@ -43,25 +44,34 @@
             border: 2px solid var(--shohoku-red);
             backdrop-filter: blur(8px);
             text-align: center;
+            box-shadow: 0 0 20px rgba(185, 28, 28, 0.6);
         }
 
-        .stat-label { font-size: 14px; font-weight: bold; }
-        .stat-value { font-size: 32px; font-weight: 900; }
+        .stat-label { font-size: 14px; font-weight: bold; letter-spacing: 2px; text-transform: uppercase; }
+        .stat-value { font-size: 32px; font-weight: 900; color: white; }
 
         #msg-box {
             position: absolute;
             top: 35%;
             left: 50%;
             transform: translate(-50%, -50%);
-            font-size: 60px;
+            font-size: 70px;
             font-weight: 900;
             color: #fff;
-            text-shadow: 4px 4px 0px var(--shohoku-red);
+            text-shadow: 5px 5px 0px var(--shohoku-red), -2px -2px 0px #000;
             pointer-events: none;
             opacity: 0;
             text-align: center;
+            white-space: nowrap;
             z-index: 20;
-            transition: opacity 0.3s;
+            transition: opacity 0.3s, transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        #sub-msg {
+            font-size: 26px;
+            display: block;
+            margin-top: 10px;
+            font-style: italic;
         }
 
         canvas { display: block; }
@@ -69,6 +79,7 @@
 </head>
 <body>
 
+    <!-- 遊戲層 -->
     <div id="ui-layer">
         <div class="stat-box">
             <div class="stat-label">總得分</div>
@@ -80,36 +91,55 @@
         </div>
     </div>
 
-    <div id="msg-box">
-        <span id="main-msg">好痛！</span>
+    <div id="msg-box" style="opacity: 0;">
+        <span id="main-msg">空心入網！</span>
+        <span id="sub-msg">教練...我想打籃球</span>
     </div>
 
     <canvas id="gameCanvas"></canvas>
 
 <script>
+    /**
+     * 遊戲核心邏輯 - 經典寸頭櫻木造型版
+     */
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
     const scoreEl = document.getElementById('score');
     const highScoreEl = document.getElementById('high-score');
     const msgBox = document.getElementById('msg-box');
     const mainMsg = document.getElementById('main-msg');
+    const subMsg = document.getElementById('sub-msg');
 
-    let gameActive = true; // 預設為 true，移除驗證流程
+    let gameActive = true; // 直接啟動遊戲，不再需要驗證
+
+    const QUOTES = [
+        "現在放棄的話，比賽就結束了",
+        "我是天才櫻木花道！",
+        "我要稱霸全國！",
+        "控制籃板球的人就能控制比賽",
+        "教練...我想打籃球",
+        "左手只是輔助",
+        "我是天才，天才櫻木花道！"
+    ];
+
     const GRAVITY = 0.52;
     const FRICTION = 0.72; 
     const BALL_RADIUS = 24;
     const RIM_WIDTH = 105;
+    const RIM_THICKNESS = 12;
     
-    let width, height, score = 0;
+    let width, height;
+    let score = 0;
     let highScore = localStorage.getItem('slamDunkHighScore') || 0;
     highScoreEl.innerText = highScore;
 
     let isDragging = false;
-    let dragStart = { x: 0, y: 0 }, dragCurrent = { x: 0, y: 0 };
+    let dragStart = { x: 0, y: 0 };
+    let dragCurrent = { x: 0, y: 0 };
 
-    // 頭部物理物件
+    // 頭部獨立物理物件
     const headObj = {
-        x: 0, y: 0, vx: 0, vy: 0, angle: 0, vAngle: 0,
+        x: 0, y: 0, vx: 0, vy: 0, angle: 0, vAngle: 0, worldX: 0, worldY: 0,
         isFlying: false,
         reset() {
             this.isFlying = false;
@@ -118,16 +148,30 @@
     };
 
     const player = {
-        x: 220, y: 0, jumpOffset: 0,
+        x: 220,
+        y: 0,
+        state: 'idle',
+        jumpOffset: 0,
+        armAngle: 0,
         update() {
             this.y = height - 160;
             if (isDragging) {
+                this.state = 'crouch';
                 this.jumpOffset = 10;
+                const dx = dragStart.x - dragCurrent.x;
+                const dy = dragStart.y - dragCurrent.y;
+                this.armAngle = Math.atan2(dy, dx) - Math.PI/2;
             } else if (ball.inAir && ball.active) {
+                this.state = 'jump';
                 this.jumpOffset = -30;
             } else {
+                this.state = 'idle';
                 this.jumpOffset = 0;
             }
+            
+            // 隨時更新頭部在遊戲世界中的實際座標，用來做碰撞偵測
+            headObj.worldX = this.x;
+            headObj.worldY = this.y + this.jumpOffset - 30;
         },
         draw() {
             const py = this.y + this.jumpOffset;
@@ -137,193 +181,394 @@
             ctx.translate(this.x, height - 100);
             ctx.scale(1, -0.3);
             ctx.globalAlpha = 0.2;
-            this.drawBody(0);
-            if (!headObj.isFlying) this.drawHead(0);
+            this.drawCharacter(0);
             ctx.restore();
 
             // 本體
             ctx.save();
             ctx.translate(this.x, py);
-            this.drawBody(this.jumpOffset);
-            if (!headObj.isFlying) {
-                this.drawHead(this.jumpOffset);
-                // 更新頭部檢測位置 (世界座標)
-                headObj.worldX = this.x;
-                headObj.worldY = py - 30;
-            }
+            this.drawCharacter(this.jumpOffset);
             ctx.restore();
         },
-        drawBody(jumpOff) {
-            // 腳
+        drawHead() {
+            // 獨立出來的頭部繪製邏輯
             ctx.fillStyle = '#ffdbac';
-            ctx.fillRect(-20, 60, 12, 50);
-            ctx.fillRect(8, 60, 12, 50);
+            ctx.beginPath();
+            ctx.arc(0, 0, 28, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 經典寸頭
+            ctx.fillStyle = '#dc2626';
+            ctx.beginPath();
+            ctx.arc(0, -3, 29, Math.PI, 0); 
+            ctx.fill();
+            
+            // 質感質感
+            ctx.strokeStyle = '#dc2626';
+            ctx.lineWidth = 1;
+            for(let i=0; i<30; i++) {
+                const angle = Math.PI + (i * Math.PI / 30);
+                const x = Math.cos(angle) * 29;
+                const y = Math.sin(angle) * 29 - 3;
+                ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x * 1.05, y * 1.05); ctx.stroke();
+            }
+
+            // 五官
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath(); ctx.moveTo(-18, -10); ctx.lineTo(-6, -11); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(18, -10); ctx.lineTo(6, -11); ctx.stroke();
+            ctx.fillStyle = '#000';
+            ctx.beginPath(); ctx.arc(-10, -3, 2.5, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(10, -3, 2.5, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(-8, 10); ctx.quadraticCurveTo(0, 8, 8, 10); ctx.stroke();
+        },
+        drawCharacter(jumpOff) {
+            // 腳 & 鞋子 (經典黑紅配色)
+            const drawLeg = (offsetX) => {
+                ctx.fillStyle = '#ffdbac';
+                ctx.fillRect(offsetX, 60 - jumpOff, 12, 50);
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(offsetX - 2, 100 - jumpOff, 22, 12);
+                ctx.fillStyle = '#b91c1c';
+                ctx.fillRect(offsetX - 2, 107 - jumpOff, 22, 5);
+            };
+            drawLeg(-20);
+            drawLeg(8);
+
             // 身體
             ctx.fillStyle = '#b91c1c';
-            ctx.beginPath(); ctx.roundRect(-28, 0, 56, 80, 8); ctx.fill();
-            ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.strokeRect(-28, 0, 56, 80);
-            ctx.fillStyle = 'white'; ctx.font = 'bold 26px Impact'; ctx.textAlign = 'center';
+            ctx.beginPath();
+            ctx.roundRect(-28, 0, 56, 80, 8);
+            ctx.fill();
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(-28, 0, 56, 80);
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 26px Impact';
+            ctx.textAlign = 'center';
             ctx.fillText('10', 0, 48); 
-            // 手
-            ctx.strokeStyle = '#ffdbac'; ctx.lineWidth = 16; ctx.lineCap = 'round';
-            ctx.beginPath(); ctx.moveTo(22, 15); 
-            if (isDragging) ctx.lineTo(40, -50);
-            else if (ball.inAir && ball.active) ctx.lineTo(45, -75);
-            else ctx.lineTo(40, 50);
-            ctx.stroke();
-        },
-        drawHead(jumpOff) {
-            ctx.save();
-            ctx.translate(0, -30);
-            this.renderHeadContent();
-            ctx.restore();
-        },
-        renderHeadContent() {
-            ctx.fillStyle = '#ffdbac';
-            ctx.beginPath(); ctx.arc(0, 0, 28, 0, Math.PI * 2); ctx.fill();
-            // 寸頭
-            ctx.fillStyle = '#dc2626';
-            ctx.beginPath(); ctx.arc(0, -3, 29, Math.PI, 0); ctx.fill();
-            // 五官
-            ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.moveTo(-15, -10); ctx.lineTo(-5, -11); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(15, -10); ctx.lineTo(5, -11); ctx.stroke();
-            ctx.fillStyle = '#000';
-            ctx.beginPath(); ctx.arc(-8, -3, 2.5, 0, Math.PI*2); ctx.fill();
-            ctx.beginPath(); ctx.arc(8, -3, 2.5, 0, Math.PI*2); ctx.fill();
+
+            // 頭部與經典寸頭設計 (如果頭沒飛出去才畫)
+            if (!headObj.isFlying) {
+                ctx.save();
+                ctx.translate(0, -30);
+                this.drawHead();
+                ctx.restore();
+            }
+
+            // 手臂
+            ctx.strokeStyle = '#ffdbac';
+            ctx.lineWidth = 16;
+            ctx.lineCap = 'round';
+            if (this.state === 'crouch') {
+                ctx.save();
+                ctx.rotate(this.armAngle);
+                ctx.beginPath(); ctx.moveTo(20, 15); ctx.lineTo(40, -50); ctx.stroke();
+                ctx.fillStyle = '#ffdbac'; ctx.beginPath(); ctx.arc(40, -50, 10, 0, Math.PI*2); ctx.fill();
+                ctx.restore();
+            } else if (this.state === 'jump') {
+                ctx.beginPath(); ctx.moveTo(20, 15); ctx.lineTo(45, -75); ctx.stroke();
+                ctx.beginPath(); ctx.arc(45, -75, 10, 0, Math.PI*2); ctx.fill();
+            } else {
+                ctx.beginPath(); ctx.moveTo(20, 15); ctx.lineTo(40, 50); ctx.stroke();
+            }
         }
     };
 
     const ball = {
-        x: 0, y: 0, vx: 0, vy: 0, active: false, inAir: false, angle: 0,
-        reset() { this.active = true; this.inAir = false; this.vx = 0; this.vy = 0; this.angle = 0; }
+        x: 0, y: 0, vx: 0, vy: 0,
+        active: false, inAir: false, angle: 0,
+        reset() {
+            this.active = true;
+            this.inAir = false;
+            this.vx = 0; this.vy = 0;
+            this.angle = 0;
+        }
     };
 
     const hoop = {
         x: 0, y: 0, backboardX: 0,
-        init() { this.x = width - 350; this.y = height * 0.35; this.backboardX = width - 200; }
+        init() {
+            this.x = width - 350;
+            this.y = height * 0.35;
+            this.backboardX = width - 200;
+        }
     };
 
     function resize() {
-        width = window.innerWidth; height = window.innerHeight;
-        canvas.width = width; canvas.height = height;
-        hoop.init(); ball.reset();
+        width = window.innerWidth;
+        height = window.innerHeight;
+        canvas.width = width;
+        canvas.height = height;
+        hoop.init();
+        ball.reset();
     }
     window.addEventListener('resize', resize);
     resize();
 
-    canvas.addEventListener('mousedown', e => { if(!gameActive || ball.inAir) return; isDragging = true; dragStart = { x: e.clientX, y: e.clientY }; dragCurrent = { x: e.clientX, y: e.clientY }; });
-    window.addEventListener('mousemove', e => { if(isDragging) dragCurrent = { x: e.clientX, y: e.clientY }; });
-    window.addEventListener('mouseup', () => {
-        if (!isDragging) return; isDragging = false;
-        const dx = (dragStart.x - dragCurrent.x), dy = (dragStart.y - dragCurrent.y);
-        if (Math.hypot(dx, dy) < 20) return;
-        ball.vx = dx * 0.135; ball.vy = dy * 0.135; ball.inAir = true;
-    });
-
-    // 繪製軌跡預測
-    function drawTrajectory() {
-        const dx = (dragStart.x - dragCurrent.x) * 0.135;
-        const dy = (dragStart.y - dragCurrent.y) * 0.135;
-        let tx = ball.x, ty = ball.y, tvx = dx, tvy = dy;
-        
-        ctx.save();
-        ctx.beginPath();
-        ctx.setLineDash([6, 10]);
-        ctx.moveTo(tx, ty);
-        for (let i = 0; i < 20; i++) {
-            tvy += GRAVITY;
-            tx += tvx;
-            ty += tvy;
-            ctx.lineTo(tx, ty);
-        }
-        ctx.strokeStyle = 'rgba(251, 146, 60, 0.5)';
-        ctx.lineWidth = 4;
-        ctx.stroke();
-        ctx.restore();
+    function handleStart(x, y) {
+        if (!gameActive || ball.inAir) return;
+        isDragging = true;
+        dragStart = { x, y };
+        dragCurrent = { x, y };
     }
+
+    function handleEnd() {
+        if (!isDragging) return;
+        isDragging = false;
+        const dx = (dragStart.x - dragCurrent.x);
+        const dy = (dragStart.y - dragCurrent.y);
+        if (Math.hypot(dx, dy) < 20) return;
+        ball.vx = dx * 0.135;
+        ball.vy = dy * 0.135;
+        ball.inAir = true;
+    }
+
+    canvas.addEventListener('mousedown', e => handleStart(e.clientX, e.clientY));
+    window.addEventListener('mousemove', e => { if(isDragging) dragCurrent = { x: e.clientX, y: e.clientY }; });
+    window.addEventListener('mouseup', handleEnd);
+    canvas.addEventListener('touchstart', e => handleStart(e.touches[0].clientX, e.touches[0].clientY), {passive:true});
+    window.addEventListener('touchmove', e => { if(isDragging) dragCurrent = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }, {passive:true});
+    window.addEventListener('touchend', handleEnd);
 
     function update() {
         if (!gameActive) return;
         player.update();
 
-        // 處理飛出的頭部
+        // 處理飛出的頭部物理
         if (headObj.isFlying) {
             headObj.vy += GRAVITY;
             headObj.x += headObj.vx;
             headObj.y += headObj.vy;
             headObj.angle += headObj.vAngle;
+            // 掉出畫面後重置
             if (headObj.y > height + 200) headObj.reset();
         }
 
         if (ball.inAir) {
-            ball.vy += GRAVITY; ball.x += ball.vx; ball.y += ball.vy; ball.angle += ball.vx * 0.05;
+            ball.vy += GRAVITY;
+            ball.x += ball.vx;
+            ball.y += ball.vy;
+            ball.angle += ball.vx * 0.05;
 
-            // 碰撞檢測：頭部被砸
+            // 碰撞檢測：球砸中頭
             if (!headObj.isFlying && Math.hypot(ball.x - headObj.worldX, ball.y - headObj.worldY) < 45) {
                 headObj.isFlying = true;
                 headObj.x = headObj.worldX;
                 headObj.y = headObj.worldY;
+                // 賦予頭部隨機彈飛的速度跟旋轉
                 headObj.vx = ball.vx * 0.8 + (Math.random() - 0.5) * 5;
                 headObj.vy = ball.vy * 0.5 - 10;
                 headObj.vAngle = (Math.random() - 0.5) * 0.5;
-                ball.vx *= -0.5; ball.vy *= -0.5;
+                
+                // 籃球反彈減速
+                ball.vx *= -0.5; 
+                ball.vy *= -0.5;
+                
                 mainMsg.innerText = "痛死了啦！";
+                subMsg.innerText = "可惡的流川楓...";
                 msgBox.style.opacity = '1';
-                setTimeout(() => msgBox.style.opacity = '0', 1000);
+                msgBox.style.transform = 'translate(-50%, -50%) scale(1.1) rotate(5deg)';
+                setTimeout(() => { 
+                    msgBox.style.opacity = '0'; 
+                    msgBox.style.transform = 'translate(-50%, -50%) scale(1) rotate(0)'; 
+                }, 1500);
             }
 
-            if (ball.y > height + 100 || ball.x > width + 150) ball.reset();
-            if (ball.x + 24 > hoop.backboardX && ball.y > hoop.y - 150 && ball.y < hoop.y + 100) { ball.x = hoop.backboardX - 26; ball.vx *= -FRICTION; }
-            if (ball.active && ball.vy > 0 && ball.y > hoop.y && ball.y < hoop.y + 40 && ball.x > hoop.x + 5 && ball.x < hoop.x + 100) {
-                score++; scoreEl.innerText = score;
-                if (score > highScore) { highScore = score; highScoreEl.innerText = highScore; localStorage.setItem('slamDunkHighScore', highScore); }
+            if (ball.y > height + 100 || ball.x > width + 150 || ball.x < -150) ball.reset();
+
+            if (ball.x + BALL_RADIUS > hoop.backboardX && ball.y > hoop.y - 150 && ball.y < hoop.y + 100) {
+                ball.x = hoop.backboardX - BALL_RADIUS - 2;
+                ball.vx *= -FRICTION;
+            }
+
+            const rimPoints = [{x: hoop.x, y: hoop.y}, {x: hoop.x + RIM_WIDTH, y: hoop.y}];
+            rimPoints.forEach(p => {
+                const dist = Math.hypot(ball.x - p.x, ball.y - p.y);
+                if (dist < BALL_RADIUS + RIM_THICKNESS/2) {
+                    const nx = (ball.x - p.x) / dist, ny = (ball.y - p.y) / dist;
+                    const dot = ball.vx * nx + ball.vy * ny;
+                    ball.vx = (ball.vx - 2 * dot * nx) * FRICTION;
+                    ball.vy = (ball.vy - 2 * dot * ny) * FRICTION;
+                    const overlap = (BALL_RADIUS + RIM_THICKNESS/2 + 2) - dist;
+                    ball.x += nx * overlap; ball.y += ny * overlap;
+                }
+            });
+
+            if (ball.active && ball.vy > 0 && ball.y > hoop.y && ball.y < hoop.y + 35 &&
+                ball.x > hoop.x + 5 && ball.x < hoop.x + RIM_WIDTH - 5) {
+                scoreSuccess();
                 ball.active = false;
-                mainMsg.innerText = "空心入網！";
-                msgBox.style.opacity = '1';
-                setTimeout(() => msgBox.style.opacity = '0', 1000);
             }
         } else {
-            ball.x = player.x + 40; ball.y = player.y + player.jumpOffset - (isDragging ? 55 : 10);
+            ball.x = player.x + 40;
+            ball.y = player.y + player.jumpOffset - (isDragging ? 55 : 10);
         }
+    }
+
+    function scoreSuccess() {
+        score++;
+        scoreEl.innerText = score;
+        if (score > highScore) {
+            highScore = score;
+            highScoreEl.innerText = highScore;
+            localStorage.setItem('slamDunkHighScore', highScore);
+        }
+        mainMsg.innerText = score % 5 === 0 ? "我是天才！" : "空心入網！";
+        subMsg.innerText = QUOTES[Math.floor(Math.random() * QUOTES.length)];
+        msgBox.style.opacity = '1';
+        msgBox.style.transform = 'translate(-50%, -50%) scale(1.1) rotate(-3deg)';
+        setTimeout(() => { 
+            msgBox.style.opacity = '0'; 
+            msgBox.style.transform = 'translate(-50%, -50%) scale(1) rotate(0)'; 
+        }, 1500);
+    }
+
+    function drawCourtFloor() {
+        const floorY = height - 120;
+        const floorHeight = 120;
+        ctx.fillStyle = '#b45309';
+        ctx.fillRect(0, floorY, width, floorHeight);
+        ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+        ctx.lineWidth = 1;
+        const plankWidth = 50;
+        for (let x = 0; x < width; x += plankWidth) {
+            ctx.fillStyle = (Math.floor(x / plankWidth) % 2 === 0) ? '#d97706' : '#b45309';
+            ctx.fillRect(x, floorY, plankWidth, floorHeight);
+            ctx.beginPath(); ctx.moveTo(x, floorY); ctx.lineTo(x, height); ctx.stroke();
+        }
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.lineWidth = 5;
+        ctx.beginPath(); ctx.moveTo(0, floorY + 10); ctx.lineTo(width, floorY + 10); ctx.stroke();
+        ctx.strokeRect(width - 400, floorY + 10, 400, 80);
+        const shine = ctx.createLinearGradient(0, floorY, 0, height);
+        shine.addColorStop(0, 'rgba(255, 255, 255, 0.25)');
+        shine.addColorStop(0.2, 'rgba(255, 255, 255, 0.05)');
+        shine.addColorStop(1, 'rgba(0, 0, 0, 0.1)');
+        ctx.fillStyle = shine;
+        ctx.fillRect(0, floorY, width, floorHeight);
     }
 
     function draw() {
         ctx.clearRect(0, 0, width, height);
         
-        // 背景與地板
-        const grad = ctx.createLinearGradient(0, 0, 0, height);
-        grad.addColorStop(0, '#0f172a'); grad.addColorStop(1, '#1e293b');
-        ctx.fillStyle = grad; ctx.fillRect(0, 0, width, height);
-        ctx.fillStyle = '#b45309'; ctx.fillRect(0, height-120, width, 120);
-        ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(0, height-120, width, 5);
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
+        bgGrad.addColorStop(0, '#0f172a');
+        bgGrad.addColorStop(1, '#1e293b');
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(0, 0, width, height);
+
+        drawCourtFloor();
 
         if (isDragging) drawTrajectory();
 
         // 籃架
-        ctx.fillStyle = '#fff'; ctx.fillRect(hoop.backboardX, hoop.y - 150, 20, 220);
-        ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 10; ctx.strokeRect(hoop.x, hoop.y, RIM_WIDTH, 1);
+        ctx.strokeStyle = '#334155';
+        ctx.lineWidth = 20;
+        ctx.beginPath();
+        ctx.moveTo(width - 100, height - 120);
+        ctx.lineTo(width - 100, hoop.y - 50);
+        ctx.lineTo(hoop.backboardX + 15, hoop.y - 50);
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+        ctx.fillRect(hoop.backboardX, hoop.y - 150, 20, 220);
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(hoop.backboardX, hoop.y - 150, 20, 220);
+        ctx.strokeStyle = '#b91c1c';
+        ctx.strokeRect(hoop.backboardX, hoop.y - 60, 20, 60);
+
+        // 籃網
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for(let i=0; i<=6; i++) {
+            ctx.moveTo(hoop.x + i*(RIM_WIDTH/6), hoop.y);
+            ctx.lineTo(hoop.x + RIM_WIDTH/4 + i*(RIM_WIDTH/12), hoop.y + 65);
+        }
+        ctx.stroke();
+
+        // 籃圈
+        ctx.beginPath();
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = RIM_THICKNESS;
+        ctx.lineCap = 'round';
+        ctx.moveTo(hoop.x, hoop.y);
+        ctx.lineTo(hoop.x + RIM_WIDTH, hoop.y);
+        ctx.stroke();
 
         player.draw();
 
-        // 繪製飛出的頭
+        // 繪製飛出去的頭部
         if (headObj.isFlying) {
             ctx.save();
             ctx.translate(headObj.x, headObj.y);
             ctx.rotate(headObj.angle);
-            player.renderHeadContent();
+            player.drawHead();
             ctx.restore();
         }
 
-        // 籃球
-        ctx.save(); ctx.translate(ball.x, ball.y); ctx.rotate(ball.angle);
-        const bG = ctx.createRadialGradient(-8,-8,2,0,0,24); bG.addColorStop(0, '#fb923c'); bG.addColorStop(1, '#7c2d12');
-        ctx.fillStyle = bG; ctx.beginPath(); ctx.arc(0,0,24,0,Math.PI*2); ctx.fill();
-        ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
+        // 球影
+        if (ball.inAir || isDragging) {
+            ctx.save();
+            ctx.globalAlpha = 0.2;
+            const distToFloor = (height - 120) - ball.y;
+            const shadowScale = Math.max(0.1, 1 - distToFloor / 500);
+            ctx.translate(ball.x, height - 100);
+            ctx.scale(shadowScale, shadowScale * 0.3);
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.arc(0, 0, BALL_RADIUS, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        drawBall();
 
         update();
         requestAnimationFrame(draw);
     }
+
+    function drawTrajectory() {
+        const dx = (dragStart.x - dragCurrent.x) * 0.135;
+        const dy = (dragStart.y - dragCurrent.y) * 0.135;
+        let tx = ball.x, ty = ball.y, tvx = dx, tvy = dy;
+        ctx.beginPath();
+        ctx.setLineDash([6, 10]);
+        ctx.moveTo(tx, ty);
+        for (let i = 0; i < 18; i++) {
+            tvy += GRAVITY; tx += tvx; ty += tvy;
+            ctx.lineTo(tx, ty);
+        }
+        ctx.strokeStyle = 'rgba(251, 146, 60, 0.5)';
+        ctx.lineWidth = 4;
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+
+    function drawBall() {
+        ctx.save();
+        ctx.translate(ball.x, ball.y);
+        ctx.rotate(ball.angle);
+        const grad = ctx.createRadialGradient(-8, -8, 2, 0, 0, BALL_RADIUS);
+        grad.addColorStop(0, '#fb923c');
+        grad.addColorStop(1, '#7c2d12');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(0, 0, BALL_RADIUS, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, BALL_RADIUS, 0, Math.PI * 2);
+        ctx.moveTo(-BALL_RADIUS, 0); ctx.lineTo(BALL_RADIUS, 0);
+        ctx.moveTo(0, -BALL_RADIUS); ctx.lineTo(0, BALL_RADIUS);
+        ctx.stroke();
+        ctx.restore();
+    }
+
     draw();
 </script>
 </body>
