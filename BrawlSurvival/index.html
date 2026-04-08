@@ -683,12 +683,18 @@ window.returnToPrevious = function() {
     document.getElementById('ui-layer').style.display = 'none'; document.getElementById('canvas3d').classList.add('hidden'); document.getElementById('canvas2d').classList.add('hidden');
     if (window.player && window.player.meshGroup && scene) scene.remove(window.player.meshGroup); window.bots.forEach(b => { if(b.meshGroup && scene) scene.remove(b.meshGroup); }); Object.values(window.remotePlayers).forEach(p => { if(p.meshGroup && scene) scene.remove(p.meshGroup); });
     for(let k in window.pendingAcks) { clearInterval(window.pendingAcks[k].interval); } window.pendingAcks = {};
-    if (window.socket && !window.isSingle) { window.socket.disconnect(); window.socket.connect(); } 
+    
+    // 正確的退出房間邏輯，不再粗暴斷線
+    if (window.socket && !window.isSingle && window.myRoomId) { 
+        window.socket.emit('leaveRoom', { roomId: window.myRoomId }); 
+    }
+    window.myRoomId = null;
+
     if (window.isSingle) window.showScreen('singleSetup'); else window.showScreen('lobby');
 };
 
 // ==========================================
-// 4. 遊戲核心引擎與類別定義 (Classes)
+// 4. 類別定義 (Classes)
 // ==========================================
 class MapObj { 
     constructor(x,y,w,h, colorHex, colorStr) { this.x=x;this.y=y;this.w=w;this.h=h; this.colorHex = colorHex; this.colorStr = colorStr; this.mesh = null; } 
@@ -1051,90 +1057,8 @@ class SummonedBot extends AIBot {
     constructor(x, y, team, name, owner) { super(x, y, team, name, 'nita'); this.owner = owner; this.hp = 1500; this.maxHp = 1500; this.colorHex = 0xb45309; this.colorStr = '#b45309'; this.radius = 30; if(this.bodyMat) this.bodyMat.color.setHex(this.colorHex); }
 }
 
-window.bindSocketEvents = function() {
-    if (!window.socket) return;
-    
-    window.socket.on('receiveFirebaseConfig', config => {
-        if (window.initFirebaseFromConfig) {
-            window.initFirebaseFromConfig(config);
-        }
-    });
-
-    window.socket.on('loginResult', res => {
-        if(res.success) {
-            window.isGuest = false; window.myLevel = res.level; window.myExp = res.exp; window.loggedInUser = res.username;
-            window.username = window.loggedInUser; document.getElementById('usernameInput').value = window.username; document.getElementById('usernameInput').disabled = true; 
-            
-            document.getElementById('displayCurrentUser').innerText = window.loggedInUser;
-
-            if(res.hero) {
-                window.selectedHero = res.hero;
-                document.querySelectorAll('.hero-card').forEach(c => c.classList.remove('selected'));
-                let heroCard = document.querySelector(`.hero-card[data-hero="${window.selectedHero}"]`);
-                if(heroCard) heroCard.classList.add('selected');
-            }
-            window.showScreen('info');
-        } else { alert(res.msg); }
-    });
-
-    window.socket.on('logoutSuccess', () => {
-        console.log("已從伺服器成功登出。");
-    });
-    
-    window.socket.on('registerResult', res => {
-        alert(res.msg);
-        if(res.success) window.showScreen('login');
-    });
-
-    window.socket.on('expUpdated', res => { window.myLevel = res.level; window.myExp = res.exp; window.updateExpUI(); });
-
-    window.socket.on('actionAck', ackKey => {
-        if (window.pendingAcks[ackKey]) { clearInterval(window.pendingAcks[ackKey].interval); delete window.pendingAcks[ackKey]; }
-    });
-
-    window.socket.on('stateUpdate', data => { 
-        window.handleAck(data);
-        let p = window.remotePlayers[data.id] || window.bots.find(b => b.id === data.id); if (p) { p.x = data.x; p.y = data.y; p.z = data.z || 0; p.hp = data.hp; p.isDead = data.isDead; p.aimAngle = data.aimAngle; } 
-    });
-    window.socket.on('remoteShoot', data => { 
-        window.handleAck(data);
-        let p = window.remotePlayers[data.id] || window.bots.find(b => b.id === data.id); if (p) p.shoot(data.targetX, data.targetY, data.targetZ, true); 
-    });
-    window.socket.on('remoteSuper', data => { 
-        window.handleAck(data);
-        let p = window.remotePlayers[data.id] || window.bots.find(b => b.id === data.id); if (p) p.useSuper(data.targetX, data.targetY, true); 
-    });
-    window.socket.on('youGotHit', data => { 
-        window.handleAck(data);
-        if(window.player && window.player.id === data.targetId) { let shooter = window.remotePlayers[data.shooterId] || window.bots.find(b => b.id === data.shooterId) || {id: data.shooterId}; window.player.takeDamage(data.damage, shooter); } else { let bot = window.bots.find(b => b.id === data.targetId && b.isMyBot); if(bot) { let shooter = window.remotePlayers[data.shooterId] || window.bots.find(b => b.id === data.shooterId) || {id: data.shooterId}; bot.takeDamage(data.damage, shooter); } } 
-    });
-    window.socket.on('playerLeft', id => { if(window.remotePlayers[id]) { if(window.remotePlayers[id].meshGroup && scene) scene.remove(window.remotePlayers[id].meshGroup); delete window.remotePlayers[id]; } });
-    window.socket.on('roomCreated', data => { window.myRoomId = data.roomId; document.getElementById('room-display-id').innerText = data.roomId; document.getElementById('copyCodeBtn').style.display = 'inline-block'; window.showScreen('waiting-overlay'); window.updateMultiplayerLobbyUI(data); });
-    window.socket.on('roomJoined', data => { window.myRoomId = data.roomId; document.getElementById('room-display-id').innerText = data.roomId; window.showScreen('waiting-overlay'); window.updateMultiplayerLobbyUI(data); });
-    window.socket.on('waitingStatus', data => window.updateMultiplayerLobbyUI(data));
-    
-    // 關鍵修正：確保收到 gameStarted 事件時，會正確觸發底下的 window.startBattle 函數
-    window.socket.on('gameStarted', data => { window.startBattle(true, data); });
-    
-    window.socket.on('roomList', list => {
-        window.currentRoomList = list; const rl = document.getElementById('room-list'); rl.innerHTML = '';
-        if(list.length === 0) rl.innerHTML = '<div style="text-align:center; opacity:0.5; color: white;">目前沒有開放的戰場</div>';
-        list.forEach(r => {
-            let div = document.createElement('div'); div.className = 'room-item';
-            let canJoin = true; let reqTxt = "不限"; let pLevel = window.isGuest ? 0 : window.myLevel;
-            if (r.levelReq === 'higher') { reqTxt = `需 > Lv.${r.hostLevel}`; if (pLevel <= r.hostLevel) canJoin = false; }
-            if (r.levelReq === 'same') { reqTxt = `限 Lv.${r.hostLevel}`; if (pLevel !== r.hostLevel) canJoin = false; }
-            if (r.levelReq === 'lower') { reqTxt = `需 < Lv.${r.hostLevel}`; if (pLevel >= r.hostLevel) canJoin = false; }
-            div.innerHTML = `<div><span style="font-size:22px; color:#fcd34d;">${r.name}的戰場</span><br><span style="font-size:16px;">(${r.current}/${r.target}) [${r.mode}] - 等限: ${reqTxt}</span></div><button class="join-btn" ${canJoin ? '' : 'disabled style="background:#6b7280; color:#9ca3af;"'} onclick="window.socket.emit('joinRoom', {roomId:'${r.roomId}', username: window.loggedInUser || '訪客', hero:window.selectedHero, level:${pLevel}})">${canJoin ? '加入' : '條件不符'}</button>`;
-            rl.appendChild(div);
-        });
-        document.getElementById('btnShowLobby').disabled = false;
-        if (!document.getElementById('screen-createRoomModal').classList.contains('hidden')) { window.validateRoomCreation(); }
-    });
-};
-
 // ==========================================
-// 5. 遊戲核心迴圈 (被誤刪的關鍵邏輯)
+// 5. 遊戲啟動與核心渲染
 // ==========================================
 window.startBattle = function(isMulti = false, data = null) {
     window.gameState = 'playing';
@@ -1264,8 +1188,101 @@ window.animate = function() {
     }
 };
 
+window.bindSocketEvents = function() {
+    if (!window.socket) return;
+    
+    window.socket.on('receiveFirebaseConfig', config => {
+        if (window.initFirebaseFromConfig) {
+            window.initFirebaseFromConfig(config);
+        }
+    });
+
+    window.socket.on('loginResult', res => {
+        if(res.success) {
+            window.isGuest = false; window.myLevel = res.level; window.myExp = res.exp; window.loggedInUser = res.username;
+            window.username = window.loggedInUser; document.getElementById('usernameInput').value = window.username; document.getElementById('usernameInput').disabled = true; 
+            
+            document.getElementById('displayCurrentUser').innerText = window.loggedInUser;
+
+            if(res.hero) {
+                window.selectedHero = res.hero;
+                document.querySelectorAll('.hero-card').forEach(c => c.classList.remove('selected'));
+                let heroCard = document.querySelector(`.hero-card[data-hero="${window.selectedHero}"]`);
+                if(heroCard) heroCard.classList.add('selected');
+            }
+            window.showScreen('info');
+        } else { alert(res.msg); }
+    });
+
+    window.socket.on('logoutSuccess', () => {
+        console.log("已從伺服器成功登出。");
+    });
+    
+    window.socket.on('registerResult', res => {
+        alert(res.msg);
+        if(res.success) window.showScreen('login');
+    });
+
+    window.socket.on('expUpdated', res => { window.myLevel = res.level; window.myExp = res.exp; window.updateExpUI(); });
+
+    window.socket.on('actionAck', ackKey => {
+        if (window.pendingAcks[ackKey]) { clearInterval(window.pendingAcks[ackKey].interval); delete window.pendingAcks[ackKey]; }
+    });
+
+    window.socket.on('stateUpdate', data => { 
+        window.handleAck(data);
+        let p = window.remotePlayers[data.id] || window.bots.find(b => b.id === data.id); if (p) { p.x = data.x; p.y = data.y; p.z = data.z || 0; p.hp = data.hp; p.isDead = data.isDead; p.aimAngle = data.aimAngle; } 
+    });
+    window.socket.on('remoteShoot', data => { 
+        window.handleAck(data);
+        let p = window.remotePlayers[data.id] || window.bots.find(b => b.id === data.id); if (p) p.shoot(data.targetX, data.targetY, data.targetZ, true); 
+    });
+    window.socket.on('remoteSuper', data => { 
+        window.handleAck(data);
+        let p = window.remotePlayers[data.id] || window.bots.find(b => b.id === data.id); if (p) p.useSuper(data.targetX, data.targetY, true); 
+    });
+    window.socket.on('youGotHit', data => { 
+        window.handleAck(data);
+        if(window.player && window.player.id === data.targetId) { let shooter = window.remotePlayers[data.shooterId] || window.bots.find(b => b.id === data.shooterId) || {id: data.shooterId}; window.player.takeDamage(data.damage, shooter); } else { let bot = window.bots.find(b => b.id === data.targetId && b.isMyBot); if(bot) { let shooter = window.remotePlayers[data.shooterId] || window.bots.find(b => b.id === data.shooterId) || {id: data.shooterId}; bot.takeDamage(data.damage, shooter); } } 
+    });
+    window.socket.on('playerLeft', id => { if(window.remotePlayers[id]) { if(window.remotePlayers[id].meshGroup && scene) scene.remove(window.remotePlayers[id].meshGroup); delete window.remotePlayers[id]; } });
+    
+    // 收到房間解散通知
+    window.socket.on('roomClosed', msg => {
+        alert(msg);
+        if(window.gameState !== 'start') {
+            window.returnToPrevious();
+        } else {
+            window.myRoomId = null;
+            window.showScreen('lobby');
+        }
+    });
+
+    window.socket.on('roomCreated', data => { window.myRoomId = data.roomId; document.getElementById('room-display-id').innerText = data.roomId; document.getElementById('copyCodeBtn').style.display = 'inline-block'; window.showScreen('waiting-overlay'); window.updateMultiplayerLobbyUI(data); });
+    window.socket.on('roomJoined', data => { window.myRoomId = data.roomId; document.getElementById('room-display-id').innerText = data.roomId; window.showScreen('waiting-overlay'); window.updateMultiplayerLobbyUI(data); });
+    window.socket.on('waitingStatus', data => window.updateMultiplayerLobbyUI(data));
+    
+    window.socket.on('gameStarted', data => { window.startBattle(true, data); });
+    
+    window.socket.on('roomList', list => {
+        window.currentRoomList = list; const rl = document.getElementById('room-list'); rl.innerHTML = '';
+        if(list.length === 0) rl.innerHTML = '<div style="text-align:center; opacity:0.5; color: white;">目前沒有開放的戰場</div>';
+        list.forEach(r => {
+            let div = document.createElement('div'); div.className = 'room-item';
+            let canJoin = true; let reqTxt = "不限"; let pLevel = window.isGuest ? 0 : window.myLevel;
+            if (r.levelReq === 'higher') { reqTxt = `需 > Lv.${r.hostLevel}`; if (pLevel <= r.hostLevel) canJoin = false; }
+            if (r.levelReq === 'same') { reqTxt = `限 Lv.${r.hostLevel}`; if (pLevel !== r.hostLevel) canJoin = false; }
+            if (r.levelReq === 'lower') { reqTxt = `需 < Lv.${r.hostLevel}`; if (pLevel >= r.hostLevel) canJoin = false; }
+            div.innerHTML = `<div><span style="font-size:22px; color:#fcd34d;">${r.name}的戰場</span><br><span style="font-size:16px;">(${r.current}/${r.target}) [${r.mode}] - 等限: ${reqTxt}</span></div><button class="join-btn" ${canJoin ? '' : 'disabled style="background:#6b7280; color:#9ca3af;"'} onclick="window.socket.emit('joinRoom', {roomId:'${r.roomId}', username: window.loggedInUser || '訪客', hero:window.selectedHero, level:${pLevel}})">${canJoin ? '加入' : '條件不符'}</button>`;
+            rl.appendChild(div);
+        });
+        document.getElementById('btnShowLobby').disabled = false;
+        if (!document.getElementById('screen-createRoomModal').classList.contains('hidden')) { window.validateRoomCreation(); }
+    });
+};
+
 // ==========================================
-// 8. 初始化與事件綁定
+// 8. 初始化與啟動邏輯
 // ==========================================
 window.onload = () => {
     
