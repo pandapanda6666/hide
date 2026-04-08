@@ -122,9 +122,8 @@
             <input type="password" id="loginPwd" placeholder="輸入密碼" maxlength="15" style="width: 100%; box-sizing: border-box; margin-bottom:15px;">
             <button id="btnLogin" style="background:#3b82f6; box-shadow: 0 6px 0 #1d4ed8; width:100%; margin-bottom:15px;">一般登入</button>
             
-            <button id="btnGoogleLogin" style="background:#ffffff; color:#000; box-shadow: 0 6px 0 #cccccc; width:100%; margin-bottom:15px; font-family: sans-serif; display: flex; align-items: center; justify-content: center; gap: 10px;">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" width="24" height="24">
-                透過 Google 登入
+            <button id="btnGoogleLogin" disabled style="background:#ffffff; color:#000; box-shadow: 0 6px 0 #cccccc; width:100%; margin-bottom:15px; font-family: sans-serif; display: flex; align-items: center; justify-content: center; gap: 10px;">
+                載入伺服器金鑰中...
             </button>
 
             <button id="btnShowRegister" style="background:#8b5cf6; box-shadow: 0 6px 0 #5b21b6; width:100%; margin-bottom:10px;">註冊新帳號</button>
@@ -239,11 +238,11 @@
         </div>
     </div>
 
-    <!-- 4. 線大廳 -->
+    <!-- 4. 線上大廳 -->
     <div id="screen-lobby" class="screen hidden">
         <h1>線上大廳</h1>
         <div class="setup-container" style="max-width: 750px;">
-            <button id="btnQuickMatch" style="background: #a855f7; box-shadow: 0 8px 0 #7e22ce; width: 100%; margin-bottom: 10px;">🎲 隨機尋找對戰 (自動配對)</button>
+            <button id="btnQuickMatch" style="background: #a855f7; box-shadow: 0 8px 0 #7e22ce; width: 100%; margin-bottom: 10px;">🎲 隨機尋找對戰 (自動配配)</button>
             
             <div style="display: flex; gap: 10px; margin-bottom: 10px;">
                 <button id="btnShowCreateRoom" style="background: #4ade80; box-shadow: 0 8px 0 #166534; flex: 1;">✨ 建立新房間</button>
@@ -342,34 +341,35 @@
     </footer>
 
 <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-    import { getAuth, signInWithPopup, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
+    import { getAuth, signInWithPopup, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-auth.js";
 
-    // 這裡請填入您在 Firebase 控制台獲取的 Config
-    const firebaseConfig = {
-        apiKey: "YOUR_API_KEY",
-        authDomain: "YOUR_AUTH_DOMAIN",
-        projectId: "YOUR_PROJECT_ID",
-        storageBucket: "YOUR_STORAGE_BUCKET",
-        messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-        appId: "YOUR_APP_ID"
+    window.firebaseAuth = null;
+    window.firebaseProvider = null;
+    window.firebaseInitialized = false;
+
+    const btnGoogle = document.getElementById('btnGoogleLogin');
+
+    // 負責接收來自 Node.js 伺服器的金鑰並啟動 Firebase
+    window.initFirebaseFromConfig = function(config) {
+        if(window.firebaseInitialized) return;
+        try {
+            const app = initializeApp(config);
+            window.firebaseAuth = getAuth(app);
+            window.firebaseProvider = new GoogleAuthProvider();
+            window.firebaseInitialized = true;
+            btnGoogle.disabled = false;
+            btnGoogle.innerHTML = '<img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" width="24" height="24"> 透過 Google 登入';
+        } catch(e) {
+            console.warn("Firebase 未設定或發生錯誤", e);
+            btnGoogle.innerHTML = '驗證系統載入失敗';
+        }
     };
 
-    let auth;
-    let provider;
-
-    try {
-        const app = initializeApp(firebaseConfig);
-        auth = getAuth(app);
-        provider = new GoogleAuthProvider();
-    } catch(e) {
-        console.warn("Firebase 未設定，請記得填寫 firebaseConfig");
-    }
-
-    document.getElementById('btnGoogleLogin').onclick = () => {
-        if(!auth) return alert("Firebase 尚未設定，請開發者先填入 firebaseConfig。");
+    btnGoogle.onclick = () => {
+        if(!window.firebaseInitialized || !window.firebaseAuth) return alert("Firebase 尚未連線，請確認伺服器狀態。");
         
-        signInWithPopup(auth, provider)
+        signInWithPopup(window.firebaseAuth, window.firebaseProvider)
             .then((result) => {
                 const user = result.user;
                 if(window.socket) {
@@ -474,6 +474,8 @@ window.fetchUrlAndConnect = function(callback) {
         if(!window.socket) {
             window.socket = io(serverUrl);
             window.bindSocketEvents();
+            // 連線建立後，立刻向本機伺服器請求 Firebase 金鑰
+            window.socket.emit('requestFirebaseConfig');
         }
         document.getElementById('loading-screen').style.display = 'none';
         window.showScreen('login');
@@ -484,6 +486,8 @@ window.fetchUrlAndConnect = function(callback) {
         if(!window.socket) {
             window.socket = io("http://localhost:5000");
             window.bindSocketEvents();
+            // 本機測試時也一樣請求金鑰
+            window.socket.emit('requestFirebaseConfig');
         }
         document.getElementById('loading-screen').style.display = 'none';
         window.showScreen('login');
@@ -1048,6 +1052,13 @@ class SummonedBot extends AIBot {
 window.bindSocketEvents = function() {
     if (!window.socket) return;
     
+    // 接收到本機伺服器傳來的金鑰，初始化 Firebase
+    window.socket.on('receiveFirebaseConfig', config => {
+        if (window.initFirebaseFromConfig) {
+            window.initFirebaseFromConfig(config);
+        }
+    });
+
     window.socket.on('loginResult', res => {
         if(res.success) {
             window.isGuest = false; window.myLevel = res.level; window.myExp = res.exp; window.loggedInUser = res.username;
