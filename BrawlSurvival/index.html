@@ -111,7 +111,6 @@
         <div id="loading-text">正在尋找伺服器連線...</div>
     </div>
 
-    <!-- 系統公告彈窗 -->
     <div id="sys-msg-modal" class="hidden">
         <div class="sys-msg-box">
             <h2>系統公告</h2>
@@ -120,7 +119,6 @@
         </div>
     </div>
 
-    <!-- 全域聊天室 (登入後顯示) -->
     <div id="global-chat-container" class="hidden minimized">
         <div id="chat-header" onclick="document.getElementById('global-chat-container').classList.toggle('minimized')">
             <span>💬 全域聊天室</span>
@@ -137,7 +135,6 @@
     <canvas id="canvas2d" class="game-canvas hidden"></canvas>
     <div id="fpsCrosshair" class="hidden"></div>
 
-    <!-- 遊戲中 UI -->
     <div id="ui-layer">
         <div class="hud-top">
             <div id="blueScoreDisplay" style="color: #60a5fa;">藍隊存活: 0</div>
@@ -153,7 +150,6 @@
         </div>
     </div>
 
-    <!-- 1. 登入畫面 -->
     <div id="screen-login" class="screen hidden">
         <h1>荒野生存 - 登入</h1>
         <div class="setup-container" style="max-width: 400px; text-align: center;">
@@ -171,7 +167,6 @@
         </div>
     </div>
 
-    <!-- 1.5 註冊畫面 -->
     <div id="screen-register" class="screen hidden">
         <h1>註冊新帳號</h1>
         <div class="setup-container" style="max-width: 600px;">
@@ -208,7 +203,6 @@
         </div>
     </div>
 
-    <!-- 2. 主選單 -->
     <div id="screen-info" class="screen hidden">
         <h1>荒野生存 雙視角亂鬥</h1>
         <div class="setup-container" style="max-width: 900px;">
@@ -259,7 +253,6 @@
         </div>
     </div>
 
-    <!-- 3. 單機模式設定彈窗 -->
     <div id="screen-singleSetup" class="screen hidden" style="background: rgba(0,0,0,0.85); z-index: 150;">
         <div class="setup-container" style="max-width: 500px; text-align: center;">
             <h2 style="font-size: 36px; color: #fcd34d; margin-top: 0; margin-bottom: 20px;">單機模式設定</h2>
@@ -282,7 +275,6 @@
         </div>
     </div>
 
-    <!-- 4. 線上大廳 -->
     <div id="screen-lobby" class="screen hidden">
         <h1>線上大廳</h1>
         <div class="setup-container" style="max-width: 750px;">
@@ -303,7 +295,6 @@
         </div>
     </div>
 
-    <!-- 5. 建立房間選項 Modal -->
     <div id="screen-createRoomModal" class="screen hidden" style="background: rgba(0,0,0,0.85); z-index: 150;">
         <div class="setup-container" style="max-width: 600px; width: 90%; text-align: center;">
             <h2 style="font-size: 36px; color: #fcd34d; margin-top: 0; margin-bottom: 20px;">建立新戰場</h2>
@@ -345,7 +336,6 @@
         </div>
     </div>
 
-    <!-- 6. 等待連線與選角 -->
     <div id="screen-waiting-overlay" class="screen hidden" style="background: rgba(0,0,0,0.95); z-index: 100; justify-content: flex-start; padding-top: 40px; align-items: center;">
         <h2 style="font-size: 52px; color: #fcd34d; margin-bottom: 10px;">⚔️ 戰區整備中，等待連線</h2>
         <div id="waitingStatusDesc" style="font-size: 32px; color: white; margin-bottom: 10px;">等待全員到齊 (0/0)...</div>
@@ -373,7 +363,6 @@
         <button id="btnCancelWaiting" style="background: #ef4444; padding: 10px 40px; font-size: 20px;">取消連線並返回</button>
     </div>
 
-    <!-- 7. 遊戲結束結算 -->
     <div id="screen-game-over" class="screen hidden">
         <h1 id="endTitle">遊戲結束</h1>
         <p id="finalScoreDisplay"></p>
@@ -1104,139 +1093,125 @@ class SummonedBot extends AIBot {
 }
 
 // ==========================================
-// 5. 遊戲啟動與核心渲染
+// 8. 事件綁定 (修復遺失的部分)
 // ==========================================
-window.startBattle = function(isMulti = false, data = null) {
-    window.gameState = 'playing';
-    window.isSingle = !isMulti;
-    document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
-    document.getElementById('ui-layer').style.display = 'flex';
-    document.getElementById('global-chat-container').classList.add('hidden'); // 戰鬥中隱藏聊天室
+window.bindSocketEvents = function() {
+    if (!window.socket) return;
     
-    window.blueScore = 0; window.redScore = 0; window.frameCount = 0;
-    window.bullets = []; window.particles = []; window.floatingTexts = []; window.modeEntities = [];
-    window.remotePlayers = {}; window.bots = [];
-    window.walls = [ new Wall(300, 200, 200, 100), new Wall(1100, 200, 200, 100), new Wall(300, 700, 200, 100), new Wall(1100, 700, 200, 100), new Wall(700, 400, 200, 200) ];
-    window.bushes = [ new Bush(100, 400, 150, 200), new Bush(1350, 400, 150, 200), new Bush(700, 100, 200, 100), new Bush(700, 800, 200, 100) ];
-    window.waters = [ new Water(550, 250, 100, 100), new Water(950, 250, 100, 100), new Water(550, 650, 100, 100), new Water(950, 650, 100, 100) ];
-
-    window.renderMode = document.getElementById('renderModeSelect').value;
-    if(window.renderMode === '3D') {
-        document.getElementById('canvas3d').classList.remove('hidden'); document.getElementById('camToggleBtn').classList.remove('hidden'); window.init3D();
-    } else {
-        document.getElementById('canvas2d').classList.remove('hidden'); canvas2dElement = document.getElementById('canvas2d'); canvas2dElement.width = window.innerWidth; canvas2dElement.height = window.innerHeight; ctx2d = canvas2dElement.getContext('2d');
-    }
-
-    if (isMulti && data) {
-        window.currentMode = data.mode; window.targetScore = data.targetCount; let spawn = window.getSafeSpawnPoint(window.selectedTeam);
-        for(let id in data.players) {
-            let p = data.players[id]; let isMe = (id === window.socket.id); let charSpawn = window.getSafeSpawnPoint(p.team);
-            if(isMe) { window.player = new Character(charSpawn.x, charSpawn.y, p.team, p.name, p.hero); window.player.id = id; } 
-            else if(p.isBot) { let bot = new AIBot(charSpawn.x, charSpawn.y, p.team, p.name, p.hero); bot.id = id; bot.isMyBot = (p.owner === window.socket.id); window.bots.push(bot); } 
-            else { let rp = new Character(charSpawn.x, charSpawn.y, p.team, p.name, p.hero); rp.id = id; window.remotePlayers[id] = rp; }
+    window.socket.on('receiveFirebaseConfig', config => {
+        if (window.initFirebaseFromConfig) {
+            window.initFirebaseFromConfig(config);
         }
-        if(!window.player && data.players[window.socket.id]) { let pd = data.players[window.socket.id]; window.player = new Character(spawn.x, spawn.y, pd.team, pd.name, pd.hero); window.player.id = window.socket.id; }
-    } else {
-        window.currentMode = document.getElementById('singleModeSelect').value; window.targetScore = parseInt(document.getElementById('singleSizeSelect').value); let pSpawn = window.getSafeSpawnPoint(window.selectedTeam);
-        window.player = new Character(pSpawn.x, pSpawn.y, window.selectedTeam, window.username, window.selectedHero);
-        let totalBots = window.targetScore * 2 - 1; let myTeamCount = 1; let enemyTeamCount = 0; let heroKeysArr = Object.keys(HERO_DB);
-        for(let i=0; i<totalBots; i++) {
-            let t = (myTeamCount < window.targetScore) ? window.selectedTeam : (window.selectedTeam==='blue'?'red':'blue');
-            if(t === window.selectedTeam) myTeamCount++; else enemyTeamCount++;
-            let bSpawn = window.getSafeSpawnPoint(t); let rHero = heroKeysArr[Math.floor(Math.random() * heroKeysArr.length)]; let bot = new AIBot(bSpawn.x, bSpawn.y, t, `電腦_${i+1}`, rHero); bot.id = 'bot_' + Math.random().toString(36).substr(2,6); bot.isMyBot = true; window.bots.push(bot);
-        }
-    }
-    
-    let centerMsg = document.getElementById('centerMessage'); centerMsg.innerText = "BRAWL!"; centerMsg.style.display = 'block'; setTimeout(() => { centerMsg.style.display = 'none'; }, 2000);
-    
-    if(!window.isSingle) {
-        setInterval(() => {
-            if(window.player && !window.player.isDead) window.socket.emit('updateState', { roomId: window.myRoomId, id: window.player.id, x: window.player.x, y: window.player.y, z: window.player.z, hp: window.player.hp, isDead: window.player.isDead, aimAngle: window.player.aimAngle });
-            window.bots.filter(b => b.isMyBot && !b.isDead).forEach(b => window.socket.emit('updateState', { roomId: window.myRoomId, id: b.id, x: b.x, y: b.y, z: b.z, hp: b.hp, isDead: b.isDead, aimAngle: b.aimAngle }));
-        }, 50);
-    }
-    window.animate();
-};
-
-window.init3D = function() {
-    scene = new THREE.Scene(); scene.background = new THREE.Color(0x1e293b); camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 3000);
-    renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas3d'), antialias: true }); renderer.setSize(window.innerWidth, window.innerHeight); renderer.shadowMap.enabled = true;
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); scene.add(ambientLight);
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8); dirLight.position.set(500, 1000, 500); dirLight.castShadow = true; dirLight.shadow.camera.left = -1000; dirLight.shadow.camera.right = 1000; dirLight.shadow.camera.top = 1000; dirLight.shadow.camera.bottom = -1000; scene.add(dirLight);
-    const groundGeo = new THREE.PlaneGeometry(window.WORLD_WIDTH, window.WORLD_HEIGHT); const groundMat = new THREE.MeshLambertMaterial({ color: 0xa3e635 }); const ground = new THREE.Mesh(groundGeo, groundMat); ground.rotation.x = -Math.PI / 2; ground.position.set(window.WORLD_WIDTH/2, 0, window.WORLD_HEIGHT/2); ground.receiveShadow = true; scene.add(ground);
-    window.walls.forEach(w => { if(!w.mesh) { const geo = new THREE.BoxGeometry(w.w, 80, w.h); const mat = new THREE.MeshLambertMaterial({color: w.colorHex}); w.mesh = new THREE.Mesh(geo, mat); w.mesh.position.set(w.x + w.w/2, 40, w.y + w.h/2); w.mesh.castShadow = true; w.mesh.receiveShadow = true; scene.add(w.mesh); } });
-    window.bushes.forEach(b => { if(!b.mesh) { const geo = new THREE.BoxGeometry(b.w, 40, b.h); const mat = new THREE.MeshLambertMaterial({color: b.colorHex, transparent: true, opacity: 0.9}); b.mesh = new THREE.Mesh(geo, mat); b.mesh.position.set(b.x + b.w/2, 20, b.y + b.h/2); b.mesh.receiveShadow = true; scene.add(b.mesh); } });
-    window.waters.forEach(w => { if(!w.mesh) { const geo = new THREE.PlaneGeometry(w.w, w.h); const mat = new THREE.MeshLambertMaterial({color: w.colorHex, transparent: true, opacity: 0.8}); w.mesh = new THREE.Mesh(geo, mat); w.mesh.rotation.x = -Math.PI / 2; w.mesh.position.set(w.x + w.w/2, 2, w.y + w.h/2); w.mesh.receiveShadow = true; scene.add(w.mesh); } });
-    const cursorGeo = new THREE.RingGeometry(18, 22, 32); const cursorMat = new THREE.MeshBasicMaterial({ color: 0xff0000, side: THREE.DoubleSide }); cursorMesh = new THREE.Mesh(cursorGeo, cursorMat); cursorMesh.rotation.x = -Math.PI / 2; cursorMesh.position.y = 2; scene.add(cursorMesh);
-};
-
-window.animate = function() {
-    if(window.gameState !== 'playing') return;
-    requestAnimationFrame(window.animate); window.frameCount++;
-
-    let aliveBlue = 0; let aliveRed = 0;
-    const allChars = [window.player, ...Object.values(window.remotePlayers), ...window.bots].filter(c => c);
-    
-    allChars.forEach(c => {
-        if (c.isDead && c.respawnTimer > 0) {
-            c.respawnTimer--;
-            if (c.respawnTimer <= 0 && window.currentMode === 'wipeout') {
-                c.isDead = false; c.hp = c.maxHpBase; c.ammo = c.maxAmmo; c.shieldTimer = 180;
-                let sp = window.getSafeSpawnPoint(c.team); c.x = sp.x; c.y = sp.y; c.z = 0; c.vx = 0; c.vy = 0;
-                if(c.meshGroup) c.meshGroup.visible = true; c.visible2D = true;
-            }
-        }
-        if(!c.isDead) { if(c.team === 'blue') aliveBlue++; else aliveRed++; c.update(); c.updateVisuals(); }
     });
 
-    window.bullets.forEach(b => b.update()); window.bullets = window.bullets.filter(b => !b.isDead);
-    window.modeEntities.forEach(e => e.update()); window.modeEntities = window.modeEntities.filter(e => !e.isDead);
+    window.socket.on('loginResult', res => {
+        if(res.success) {
+            window.isGuest = false; window.myLevel = res.level; window.myExp = res.exp; window.loggedInUser = res.username;
+            window.username = window.loggedInUser; document.getElementById('usernameInput').value = window.username; document.getElementById('usernameInput').disabled = true; 
+            
+            document.getElementById('displayCurrentUser').innerText = window.loggedInUser;
+
+            if(res.hero) {
+                window.selectedHero = res.hero;
+                document.querySelectorAll('.hero-card').forEach(c => c.classList.remove('selected'));
+                let heroCard = document.querySelector(`.hero-card[data-hero="${window.selectedHero}"]`);
+                if(heroCard) heroCard.classList.add('selected');
+            }
+            window.showScreen('info');
+        } else { alert(res.msg); }
+    });
+
+    window.socket.on('logoutSuccess', () => {
+        console.log("已從伺服器成功登出。");
+    });
     
-    window.particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.z += p.vz; p.vz -= 0.5; p.life -= 0.05; if(p.z < 0) p.z = 0; if(p.mesh) { p.mesh.position.set(p.x, p.z, p.y); p.mesh.material.opacity = p.life; p.mesh.material.transparent = true; } });
-    window.particles = window.particles.filter(p => { if(p.life <= 0) { if(p.mesh) scene.remove(p.mesh); return false; } return true; });
+    window.socket.on('registerResult', res => {
+        alert(res.msg);
+        if(res.success) window.showScreen('login');
+    });
 
-    window.floatingTexts.forEach(f => { f.z += 1; f.life -= 0.02; if(f.sprite) { f.sprite.position.set(f.x, f.z, f.y); f.sprite.material.opacity = f.life; } });
-    window.floatingTexts = window.floatingTexts.filter(f => { if(f.life <= 0) { if(f.sprite) scene.remove(f.sprite); return false; } return true; });
+    window.socket.on('expUpdated', res => { window.myLevel = res.level; window.myExp = res.exp; window.updateExpUI(); });
 
-    if (window.currentMode === 'wipeout') {
-        document.getElementById('blueScoreDisplay').innerText = `藍隊擊殺: ${window.blueScore} / ${window.targetScore}`; document.getElementById('redScoreDisplay').innerText = `紅隊擊殺: ${window.redScore} / ${window.targetScore}`;
-        if(window.blueScore >= window.targetScore || window.redScore >= window.targetScore) { window.handleGameOver(); return; }
-    } else {
-        document.getElementById('blueScoreDisplay').innerText = `藍隊存活: ${aliveBlue}`; document.getElementById('redScoreDisplay').innerText = `紅隊存活: ${aliveRed}`;
-        if ((aliveBlue === 0 || aliveRed === 0) && window.frameCount > 60) { window.handleGameOver(); return; }
-    }
+    window.socket.on('actionAck', ackKey => {
+        if (window.pendingAcks[ackKey]) { clearInterval(window.pendingAcks[ackKey].interval); delete window.pendingAcks[ackKey]; }
+    });
 
-    if(window.renderMode === '3D' && window.player && !window.isSpectating) {
-        if (window.cameraMode === 'topdown') {
-            camera.position.x = window.player.x; camera.position.z = window.player.y + 600; camera.position.y = 800; camera.lookAt(window.player.x, 0, window.player.y);
-            raycaster.setFromCamera(new THREE.Vector2(mouseState.screenX, mouseState.screenY), camera);
-            let intersects = raycaster.intersectObject(new THREE.Mesh(new THREE.PlaneGeometry(10000, 10000).rotateX(-Math.PI/2), new THREE.MeshBasicMaterial({visible:false})));
-            if(intersects.length > 0) { mouseState.worldX = intersects[0].point.x; mouseState.worldY = intersects[0].point.z; cursorMesh.position.set(mouseState.worldX, 2, mouseState.worldY); cursorMesh.visible = true; }
+    window.socket.on('stateUpdate', data => { 
+        window.handleAck(data);
+        let p = window.remotePlayers[data.id] || window.bots.find(b => b.id === data.id); if (p) { p.x = data.x; p.y = data.y; p.z = data.z || 0; p.hp = data.hp; p.isDead = data.isDead; p.aimAngle = data.aimAngle; } 
+    });
+    window.socket.on('remoteShoot', data => { 
+        window.handleAck(data);
+        let p = window.remotePlayers[data.id] || window.bots.find(b => b.id === data.id); if (p) p.shoot(data.targetX, data.targetY, data.targetZ, true); 
+    });
+    window.socket.on('remoteSuper', data => { 
+        window.handleAck(data);
+        let p = window.remotePlayers[data.id] || window.bots.find(b => b.id === data.id); if (p) p.useSuper(data.targetX, data.targetY, true); 
+    });
+    window.socket.on('youGotHit', data => { 
+        window.handleAck(data);
+        if(window.player && window.player.id === data.targetId) { let shooter = window.remotePlayers[data.shooterId] || window.bots.find(b => b.id === data.shooterId) || {id: data.shooterId}; window.player.takeDamage(data.damage, shooter); } else { let bot = window.bots.find(b => b.id === data.targetId && b.isMyBot); if(bot) { let shooter = window.remotePlayers[data.shooterId] || window.bots.find(b => b.id === data.shooterId) || {id: data.shooterId}; bot.takeDamage(data.damage, shooter); } } 
+    });
+    window.socket.on('playerLeft', id => { if(window.remotePlayers[id]) { if(window.remotePlayers[id].meshGroup && scene) scene.remove(window.remotePlayers[id].meshGroup); delete window.remotePlayers[id]; } });
+    
+    // 收到房間解散通知
+    window.socket.on('roomClosed', msg => {
+        alert(msg);
+        if(window.gameState !== 'start') {
+            window.returnToPrevious();
         } else {
-            camera.position.x = window.player.x; camera.position.y = window.player.z + 40; camera.position.z = window.player.y;
-            let q = new THREE.Quaternion().setFromEuler(new THREE.Euler(window.fpsPitch, window.fpsYaw, 0, 'YXZ'));
-            camera.quaternion.copy(q); cursorMesh.visible = false;
+            window.myRoomId = null;
+            window.showScreen('lobby');
         }
-        renderer.render(scene, camera);
-    } else if (window.renderMode === '2D' && ctx2d) {
-        ctx2d.fillStyle = '#1e293b'; ctx2d.fillRect(0, 0, window.innerWidth, window.innerHeight); ctx2d.save();
-        let camX = window.innerWidth/2, camY = window.innerHeight/2; if(window.player && !window.isSpectating) { camX = window.player.x; camY = window.player.y; }
-        let s = 0.8; ctx2d.translate(window.innerWidth/2, window.innerHeight/2); ctx2d.scale(s, s); ctx2d.translate(-camX, -camY);
-        ctx2d.fillStyle = '#a3e635'; ctx2d.fillRect(0, 0, window.WORLD_WIDTH, window.WORLD_HEIGHT); ctx2d.strokeStyle = '#fff'; ctx2d.lineWidth = 10; ctx2d.strokeRect(0, 0, window.WORLD_WIDTH, window.WORLD_HEIGHT);
-        window.walls.forEach(w => w.draw2D(ctx2d)); window.waters.forEach(w => w.draw2D(ctx2d)); window.bushes.forEach(b => b.draw2D(ctx2d)); window.modeEntities.forEach(e => e.draw2D(ctx2d)); window.bullets.forEach(b => b.draw2D(ctx2d));
-        let drawChars = allChars.filter(c => c && !c.isDead).sort((a,b) => a.y - b.y); drawChars.forEach(c => c.draw2D(ctx2d));
-        window.particles.forEach(p => { ctx2d.fillStyle = p.colorStr; ctx2d.globalAlpha = Math.max(0, p.life); ctx2d.beginPath(); ctx2d.arc(p.x, p.y - p.z, 4, 0, Math.PI*2); ctx2d.fill(); }); ctx2d.globalAlpha = 1.0;
-        window.floatingTexts.forEach(f => { ctx2d.fillStyle = f.colorStr; ctx2d.globalAlpha = Math.max(0, f.life); ctx2d.font = 'bold 24px Arial'; ctx2d.textAlign = 'center'; ctx2d.strokeStyle = 'black'; ctx2d.lineWidth = 3; ctx2d.strokeText(f.txt, f.x, f.y - f.z); ctx2d.fillText(f.txt, f.x, f.y - f.z); }); ctx2d.globalAlpha = 1.0;
-        if(window.usingMouse && window.player && !window.isSpectating) {
-            let rect = canvas2dElement.getBoundingClientRect(); mouseState.worldX = (mouseState.clientX - rect.left - window.innerWidth/2)/s + camX; mouseState.worldY = (mouseState.clientY - rect.top - window.innerHeight/2)/s + camY;
-            ctx2d.strokeStyle = 'rgba(255,0,0,0.5)'; ctx2d.lineWidth = 2; ctx2d.beginPath(); ctx2d.arc(mouseState.worldX, mouseState.worldY, 15, 0, Math.PI*2); ctx2d.stroke();
-        }
-        ctx2d.restore();
-    }
+    });
+
+    window.socket.on('roomCreated', data => { window.myRoomId = data.roomId; document.getElementById('room-display-id').innerText = data.roomId; document.getElementById('copyCodeBtn').style.display = 'inline-block'; window.showScreen('waiting-overlay'); window.updateMultiplayerLobbyUI(data); });
+    window.socket.on('roomJoined', data => { window.myRoomId = data.roomId; document.getElementById('room-display-id').innerText = data.roomId; window.showScreen('waiting-overlay'); window.updateMultiplayerLobbyUI(data); });
+    window.socket.on('waitingStatus', data => window.updateMultiplayerLobbyUI(data));
+    
+    window.socket.on('gameStarted', data => { window.startBattle(true, data); });
+    
+    window.socket.on('roomList', list => {
+        window.currentRoomList = list; const rl = document.getElementById('room-list'); rl.innerHTML = '';
+        if(list.length === 0) rl.innerHTML = '<div style="text-align:center; opacity:0.5; color: white;">目前沒有開放的戰場</div>';
+        list.forEach(r => {
+            let div = document.createElement('div'); div.className = 'room-item';
+            let canJoin = true; let reqTxt = "不限"; let pLevel = window.isGuest ? 0 : window.myLevel;
+            if (r.levelReq === 'higher') { reqTxt = `需 > Lv.${r.hostLevel}`; if (pLevel <= r.hostLevel) canJoin = false; }
+            if (r.levelReq === 'same') { reqTxt = `限 Lv.${r.hostLevel}`; if (pLevel !== r.hostLevel) canJoin = false; }
+            if (r.levelReq === 'lower') { reqTxt = `需 < Lv.${r.hostLevel}`; if (pLevel >= r.hostLevel) canJoin = false; }
+            div.innerHTML = `<div><span style="font-size:22px; color:#fcd34d;">${r.name}的戰場</span><br><span style="font-size:16px;">(${r.current}/${r.target}) [${r.mode}] - 等限: ${reqTxt}</span></div><button class="join-btn" ${canJoin ? '' : 'disabled style="background:#6b7280; color:#9ca3af;"'} onclick="window.socket.emit('joinRoom', {roomId:'${r.roomId}', username: window.loggedInUser || '訪客', hero:window.selectedHero, level:${pLevel}})">${canJoin ? '加入' : '條件不符'}</button>`;
+            rl.appendChild(div);
+        });
+        document.getElementById('btnShowLobby').disabled = false;
+        if (!document.getElementById('screen-createRoomModal').classList.contains('hidden')) { window.validateRoomCreation(); }
+    });
+
+    // 接收聊天室訊息
+    window.socket.on('chatMessage', data => {
+        const chatMsgs = document.getElementById('chat-messages');
+        const msgDiv = document.createElement('div');
+        msgDiv.className = 'chat-msg';
+        msgDiv.innerHTML = `<span class="c-user">${data.user}:</span><span class="c-text">${data.text}</span>`;
+        chatMsgs.appendChild(msgDiv);
+        chatMsgs.scrollTop = chatMsgs.scrollHeight;
+    });
+
+    // 接收系統公告
+    window.socket.on('systemMessage', msg => {
+        document.getElementById('sys-msg-content').innerText = msg;
+        document.getElementById('sys-msg-modal').classList.remove('hidden');
+    });
+    
+    // 接收強制踢出
+    window.socket.on('forceLogout', msg => {
+        alert(msg);
+        document.getElementById('btnLogout').click();
+    });
 };
 
 // ==========================================
-// 8. 初始化與事件綁定
+// 9. 初始化與介面互動邏輯
 // ==========================================
 window.onload = () => {
     
@@ -1262,30 +1237,6 @@ window.onload = () => {
     document.getElementById('chat-input').addEventListener('keypress', function (e) {
         if (e.key === 'Enter') document.getElementById('btnSendChat').click();
     });
-
-    // 接收聊天室訊息
-    if (window.socket) {
-        window.socket.on('chatMessage', data => {
-            const chatMsgs = document.getElementById('chat-messages');
-            const msgDiv = document.createElement('div');
-            msgDiv.className = 'chat-msg';
-            msgDiv.innerHTML = `<span class="c-user">${data.user}:</span><span class="c-text">${data.text}</span>`;
-            chatMsgs.appendChild(msgDiv);
-            chatMsgs.scrollTop = chatMsgs.scrollHeight;
-        });
-
-        // 接收系統公告
-        window.socket.on('systemMessage', msg => {
-            document.getElementById('sys-msg-content').innerText = msg;
-            document.getElementById('sys-msg-modal').classList.remove('hidden');
-        });
-        
-        // 接收強制踢出
-        window.socket.on('forceLogout', msg => {
-            alert(msg);
-            document.getElementById('btnLogout').click();
-        });
-    }
 
     window.addEventListener('resize', window.handleResize);
     window.addEventListener('keydown', e => { if(e && e.key){ const k = e.key.toLowerCase(); if(keys.hasOwnProperty(k)) keys[k] = true; if(k === 'v' && window.renderMode === '3D') document.getElementById('camToggleBtn').click(); } });
