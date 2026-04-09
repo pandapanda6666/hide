@@ -85,6 +85,23 @@
         #loading-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #1e293b; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 999; color: white; font-size: 32px; font-weight: bold; }
         .spinner { border: 8px solid rgba(255,255,255,0.3); border-top: 8px solid #fcd34d; border-radius: 50%; width: 60px; height: 60px; animation: spin 1s linear infinite; margin-bottom: 20px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* 全域聊天室樣式 */
+        #global-chat-container { position: fixed; bottom: 40px; left: 20px; width: 350px; height: 300px; background: rgba(15, 23, 42, 0.85); border: 4px solid #3b82f6; border-radius: 12px; display: flex; flex-direction: column; z-index: 50; transition: transform 0.3s; box-shadow: 0 5px 0 #1d4ed8; backdrop-filter: blur(5px); }
+        #global-chat-container.minimized { transform: translateY(240px); }
+        #chat-header { background: #3b82f6; color: white; padding: 10px; font-weight: bold; cursor: pointer; display: flex; justify-content: space-between; border-bottom: 2px solid #000; }
+        #chat-messages { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 5px; font-family: sans-serif; font-size: 16px; }
+        .chat-msg { background: rgba(255,255,255,0.1); padding: 6px 10px; border-radius: 8px; color: white; word-break: break-all; }
+        .chat-msg .c-user { color: #fcd34d; font-weight: bold; margin-right: 5px; }
+        #chat-input-area { display: flex; padding: 10px; border-top: 2px solid #334155; }
+        #chat-input-area input { flex: 1; padding: 8px; font-size: 16px; border: 2px solid #000; border-radius: 6px; background: #fff; color: #000; box-shadow: none; text-shadow: none; -webkit-text-stroke: 0; outline: none; }
+        #chat-input-area button { padding: 8px 15px; margin-left: 5px; font-size: 16px; border: 2px solid #000; border-radius: 6px; box-shadow: none; background: #4ade80; }
+
+        /* 系統公告彈窗樣式 */
+        #sys-msg-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 9999; }
+        .sys-msg-box { background: #1e293b; border: 4px solid #fcd34d; border-radius: 12px; padding: 30px; max-width: 500px; width: 90%; text-align: center; box-shadow: 0 10px 0 #b45309; }
+        .sys-msg-box h2 { color: #ef4444; font-size: 32px; margin-top: 0; -webkit-text-stroke: 1px black; }
+        .sys-msg-box p { color: white; font-size: 20px; line-height: 1.5; white-space: pre-wrap; font-family: sans-serif; }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
@@ -92,6 +109,28 @@
     <div id="loading-screen">
         <div class="spinner"></div>
         <div id="loading-text">正在尋找伺服器連線...</div>
+    </div>
+
+    <!-- 系統公告彈窗 -->
+    <div id="sys-msg-modal" class="hidden">
+        <div class="sys-msg-box">
+            <h2>系統公告</h2>
+            <p id="sys-msg-content"></p>
+            <button onclick="document.getElementById('sys-msg-modal').classList.add('hidden')" style="background: #3b82f6; font-size: 20px; padding: 10px 30px; margin-top: 20px;">我知道了</button>
+        </div>
+    </div>
+
+    <!-- 全域聊天室 (登入後顯示) -->
+    <div id="global-chat-container" class="hidden minimized">
+        <div id="chat-header" onclick="document.getElementById('global-chat-container').classList.toggle('minimized')">
+            <span>💬 全域聊天室</span>
+            <span>↕️</span>
+        </div>
+        <div id="chat-messages"></div>
+        <div id="chat-input-area">
+            <input type="text" id="chat-input" placeholder="輸入訊息..." maxlength="50">
+            <button id="btnSendChat">發送</button>
+        </div>
     </div>
 
     <canvas id="canvas3d" class="game-canvas hidden"></canvas>
@@ -617,7 +656,15 @@ window.showScreen = function(id) {
     document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
     const target = document.getElementById('screen-' + id) || document.getElementById(id);
     if(target) target.classList.remove('hidden');
-    if(id === 'info') { window.updateExpUI(); let sel = document.getElementById('createLevelReqSelect'); if(sel) { sel.disabled = window.isGuest; } }
+    if(id === 'info') { 
+        window.updateExpUI(); 
+        let sel = document.getElementById('createLevelReqSelect'); if(sel) { sel.disabled = window.isGuest; } 
+        document.getElementById('global-chat-container').classList.remove('hidden');
+    } else if (id === 'lobby') {
+        document.getElementById('global-chat-container').classList.remove('hidden');
+    } else {
+        document.getElementById('global-chat-container').classList.add('hidden');
+    }
 };
 window.allowDrop = function(ev) { ev.preventDefault(); ev.currentTarget.classList.add('hovered'); };
 window.dragLeave = function(ev) { ev.currentTarget.classList.remove('hovered'); };
@@ -684,7 +731,6 @@ window.returnToPrevious = function() {
     if (window.player && window.player.meshGroup && scene) scene.remove(window.player.meshGroup); window.bots.forEach(b => { if(b.meshGroup && scene) scene.remove(b.meshGroup); }); Object.values(window.remotePlayers).forEach(p => { if(p.meshGroup && scene) scene.remove(p.meshGroup); });
     for(let k in window.pendingAcks) { clearInterval(window.pendingAcks[k].interval); } window.pendingAcks = {};
     
-    // 正確的退出房間邏輯，不再粗暴斷線
     if (window.socket && !window.isSingle && window.myRoomId) { 
         window.socket.emit('leaveRoom', { roomId: window.myRoomId }); 
     }
@@ -1065,6 +1111,7 @@ window.startBattle = function(isMulti = false, data = null) {
     window.isSingle = !isMulti;
     document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
     document.getElementById('ui-layer').style.display = 'flex';
+    document.getElementById('global-chat-container').classList.add('hidden'); // 戰鬥中隱藏聊天室
     
     window.blueScore = 0; window.redScore = 0; window.frameCount = 0;
     window.bullets = []; window.particles = []; window.floatingTexts = []; window.modeEntities = [];
@@ -1188,101 +1235,8 @@ window.animate = function() {
     }
 };
 
-window.bindSocketEvents = function() {
-    if (!window.socket) return;
-    
-    window.socket.on('receiveFirebaseConfig', config => {
-        if (window.initFirebaseFromConfig) {
-            window.initFirebaseFromConfig(config);
-        }
-    });
-
-    window.socket.on('loginResult', res => {
-        if(res.success) {
-            window.isGuest = false; window.myLevel = res.level; window.myExp = res.exp; window.loggedInUser = res.username;
-            window.username = window.loggedInUser; document.getElementById('usernameInput').value = window.username; document.getElementById('usernameInput').disabled = true; 
-            
-            document.getElementById('displayCurrentUser').innerText = window.loggedInUser;
-
-            if(res.hero) {
-                window.selectedHero = res.hero;
-                document.querySelectorAll('.hero-card').forEach(c => c.classList.remove('selected'));
-                let heroCard = document.querySelector(`.hero-card[data-hero="${window.selectedHero}"]`);
-                if(heroCard) heroCard.classList.add('selected');
-            }
-            window.showScreen('info');
-        } else { alert(res.msg); }
-    });
-
-    window.socket.on('logoutSuccess', () => {
-        console.log("已從伺服器成功登出。");
-    });
-    
-    window.socket.on('registerResult', res => {
-        alert(res.msg);
-        if(res.success) window.showScreen('login');
-    });
-
-    window.socket.on('expUpdated', res => { window.myLevel = res.level; window.myExp = res.exp; window.updateExpUI(); });
-
-    window.socket.on('actionAck', ackKey => {
-        if (window.pendingAcks[ackKey]) { clearInterval(window.pendingAcks[ackKey].interval); delete window.pendingAcks[ackKey]; }
-    });
-
-    window.socket.on('stateUpdate', data => { 
-        window.handleAck(data);
-        let p = window.remotePlayers[data.id] || window.bots.find(b => b.id === data.id); if (p) { p.x = data.x; p.y = data.y; p.z = data.z || 0; p.hp = data.hp; p.isDead = data.isDead; p.aimAngle = data.aimAngle; } 
-    });
-    window.socket.on('remoteShoot', data => { 
-        window.handleAck(data);
-        let p = window.remotePlayers[data.id] || window.bots.find(b => b.id === data.id); if (p) p.shoot(data.targetX, data.targetY, data.targetZ, true); 
-    });
-    window.socket.on('remoteSuper', data => { 
-        window.handleAck(data);
-        let p = window.remotePlayers[data.id] || window.bots.find(b => b.id === data.id); if (p) p.useSuper(data.targetX, data.targetY, true); 
-    });
-    window.socket.on('youGotHit', data => { 
-        window.handleAck(data);
-        if(window.player && window.player.id === data.targetId) { let shooter = window.remotePlayers[data.shooterId] || window.bots.find(b => b.id === data.shooterId) || {id: data.shooterId}; window.player.takeDamage(data.damage, shooter); } else { let bot = window.bots.find(b => b.id === data.targetId && b.isMyBot); if(bot) { let shooter = window.remotePlayers[data.shooterId] || window.bots.find(b => b.id === data.shooterId) || {id: data.shooterId}; bot.takeDamage(data.damage, shooter); } } 
-    });
-    window.socket.on('playerLeft', id => { if(window.remotePlayers[id]) { if(window.remotePlayers[id].meshGroup && scene) scene.remove(window.remotePlayers[id].meshGroup); delete window.remotePlayers[id]; } });
-    
-    // 收到房間解散通知
-    window.socket.on('roomClosed', msg => {
-        alert(msg);
-        if(window.gameState !== 'start') {
-            window.returnToPrevious();
-        } else {
-            window.myRoomId = null;
-            window.showScreen('lobby');
-        }
-    });
-
-    window.socket.on('roomCreated', data => { window.myRoomId = data.roomId; document.getElementById('room-display-id').innerText = data.roomId; document.getElementById('copyCodeBtn').style.display = 'inline-block'; window.showScreen('waiting-overlay'); window.updateMultiplayerLobbyUI(data); });
-    window.socket.on('roomJoined', data => { window.myRoomId = data.roomId; document.getElementById('room-display-id').innerText = data.roomId; window.showScreen('waiting-overlay'); window.updateMultiplayerLobbyUI(data); });
-    window.socket.on('waitingStatus', data => window.updateMultiplayerLobbyUI(data));
-    
-    window.socket.on('gameStarted', data => { window.startBattle(true, data); });
-    
-    window.socket.on('roomList', list => {
-        window.currentRoomList = list; const rl = document.getElementById('room-list'); rl.innerHTML = '';
-        if(list.length === 0) rl.innerHTML = '<div style="text-align:center; opacity:0.5; color: white;">目前沒有開放的戰場</div>';
-        list.forEach(r => {
-            let div = document.createElement('div'); div.className = 'room-item';
-            let canJoin = true; let reqTxt = "不限"; let pLevel = window.isGuest ? 0 : window.myLevel;
-            if (r.levelReq === 'higher') { reqTxt = `需 > Lv.${r.hostLevel}`; if (pLevel <= r.hostLevel) canJoin = false; }
-            if (r.levelReq === 'same') { reqTxt = `限 Lv.${r.hostLevel}`; if (pLevel !== r.hostLevel) canJoin = false; }
-            if (r.levelReq === 'lower') { reqTxt = `需 < Lv.${r.hostLevel}`; if (pLevel >= r.hostLevel) canJoin = false; }
-            div.innerHTML = `<div><span style="font-size:22px; color:#fcd34d;">${r.name}的戰場</span><br><span style="font-size:16px;">(${r.current}/${r.target}) [${r.mode}] - 等限: ${reqTxt}</span></div><button class="join-btn" ${canJoin ? '' : 'disabled style="background:#6b7280; color:#9ca3af;"'} onclick="window.socket.emit('joinRoom', {roomId:'${r.roomId}', username: window.loggedInUser || '訪客', hero:window.selectedHero, level:${pLevel}})">${canJoin ? '加入' : '條件不符'}</button>`;
-            rl.appendChild(div);
-        });
-        document.getElementById('btnShowLobby').disabled = false;
-        if (!document.getElementById('screen-createRoomModal').classList.contains('hidden')) { window.validateRoomCreation(); }
-    });
-};
-
 // ==========================================
-// 8. 初始化與啟動邏輯
+// 8. 初始化與事件綁定
 // ==========================================
 window.onload = () => {
     
@@ -1294,6 +1248,43 @@ window.onload = () => {
             opt.innerText = HERO_DB[k].name + " (" + HERO_DB[k].cat + ")";
             heroSelect.appendChild(opt);
         }
+    }
+
+    // 聊天室發送邏輯
+    document.getElementById('btnSendChat').onclick = () => {
+        const input = document.getElementById('chat-input');
+        const msg = input.value.trim();
+        if (msg && window.socket) {
+            window.socket.emit('chatMessage', msg);
+            input.value = '';
+        }
+    };
+    document.getElementById('chat-input').addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') document.getElementById('btnSendChat').click();
+    });
+
+    // 接收聊天室訊息
+    if (window.socket) {
+        window.socket.on('chatMessage', data => {
+            const chatMsgs = document.getElementById('chat-messages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'chat-msg';
+            msgDiv.innerHTML = `<span class="c-user">${data.user}:</span><span class="c-text">${data.text}</span>`;
+            chatMsgs.appendChild(msgDiv);
+            chatMsgs.scrollTop = chatMsgs.scrollHeight;
+        });
+
+        // 接收系統公告
+        window.socket.on('systemMessage', msg => {
+            document.getElementById('sys-msg-content').innerText = msg;
+            document.getElementById('sys-msg-modal').classList.remove('hidden');
+        });
+        
+        // 接收強制踢出
+        window.socket.on('forceLogout', msg => {
+            alert(msg);
+            document.getElementById('btnLogout').click();
+        });
     }
 
     window.addEventListener('resize', window.handleResize);
