@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智慧小車遠端控制面板</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <style>
+        body {
+            font-family: 'Microsoft JhengHei', Arial, sans-serif;
+            background-color: #0f172a;
+            color: #e2e8f0;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            background-color: #1e293b;
+            border-radius: 12px;
+            padding: 25px;
+            width: 100%;
+            max-width: 800px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            margin-bottom: 20px;
+        }
+        h1, h2 { text-align: center; color: #fcd34d; margin-top: 0; }
+        .section {
+            background-color: #334155;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        button {
+            background-color: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 16px;
+            transition: background 0.2s;
+        }
+        button:hover { background-color: #2563eb; }
+        button:active { background-color: #1d4ed8; }
+        
+        .status-box {
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+            padding: 10px;
+            border-radius: 6px;
+            margin-top: 10px;
+            background-color: #475569;
+        }
+        .status-ok { color: #4ade80; }
+        .status-err { color: #f87171; }
+
+        /* 影像串流區 */
+        .video-container {
+            text-align: center;
+            margin-bottom: 20px;
+            background-color: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 2px solid #475569;
+            min-height: 240px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #94a3b8;
+        }
+        .video-container img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        /* 搖桿控制區 */
+        .joystick-container {
+            display: grid;
+            grid-template-columns: repeat(3, 80px);
+            grid-gap: 10px;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        .btn-ctrl {
+            width: 80px; height: 80px;
+            font-size: 20px;
+            background-color: #475569;
+        }
+        .btn-ctrl:active { background-color: #94a3b8; }
+        .btn-stop { background-color: #ef4444; }
+        .btn-stop:hover { background-color: #dc2626; }
+        .btn-stop:active { background-color: #b91c1c; }
+        
+        /* 滑桿區 */
+        .slider-group {
+            margin: 15px 0;
+        }
+        .slider-group label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type=range] { width: 100%; cursor: pointer; }
+        
+        /* 循線顯示區 */
+        .sensor-container {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 10px;
+        }
+        .sensor-dot {
+            width: 30px; height: 30px;
+            border-radius: 50%;
+            background-color: gray;
+            border: 2px solid black;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+            text-shadow: 1px 1px 1px black;
+        }
+        .sensor-on { background-color: #3b82f6; }
+
+        .footer {
+            text-align: center;
+            padding: 15px;
+            font-size: 14px;
+            color: #94a3b8;
+        }
+        .footer a {
+            color: #60a5fa;
+            text-decoration: none;
+        }
+        .footer a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>車輛遠端控制面板</h1>
+    
+    <div class="section" style="text-align: center;">
+        <h2>連線狀態</h2>
+        <div id="conn_status" class="status-box">準備連線中...</div>
+        <button onclick="fetchUrlAndConnect()" style="margin-top: 15px;">重新整理並連線</button>
+    </div>
+
+    <div class="section" id="control_section" style="opacity: 0.5; pointer-events: none;">
+        <h2>操作與監看畫面</h2>
+        
+        <!-- 攝影機畫面顯示區塊 -->
+        <div class="video-container">
+            <img id="camera_stream" src="" alt="等待連線或伺服器尚未啟用攝影機">
+        </div>
+        
+        <div class="slider-group">
+            <label>車體速度 (0 - 255): <span id="speed_val">150</span></label>
+            <input type="range" id="car_speed" min="0" max="255" value="150" oninput="document.getElementById('speed_val').innerText = this.value" onchange="sendCmd('V:' + this.value)">
+        </div>
+
+        <div class="joystick-container">
+            <div></div>
+            <button class="btn-ctrl" onmousedown="sendCmd('M:F')" onmouseup="sendCmd('M:S')" ontouchstart="sendCmd('M:F'); event.preventDefault();" ontouchend="sendCmd('M:S'); event.preventDefault();">W<br>前進</button>
+            <div></div>
+            
+            <button class="btn-ctrl" onmousedown="sendCmd('M:L')" onmouseup="sendCmd('M:S')" ontouchstart="sendCmd('M:L'); event.preventDefault();" ontouchend="sendCmd('M:S'); event.preventDefault();">A<br>左轉</button>
+            <button class="btn-ctrl btn-stop" onclick="sendCmd('M:S')">停止</button>
+            <button class="btn-ctrl" onmousedown="sendCmd('M:R')" onmouseup="sendCmd('M:S')" ontouchstart="sendCmd('M:R'); event.preventDefault();" ontouchend="sendCmd('M:S'); event.preventDefault();">D<br>右轉</button>
+            
+            <div></div>
+            <button class="btn-ctrl" onmousedown="sendCmd('M:B')" onmouseup="sendCmd('M:S')" ontouchstart="sendCmd('M:B'); event.preventDefault();" ontouchend="sendCmd('M:S'); event.preventDefault();">S<br>後退</button>
+            <div></div>
+        </div>
+
+        <div class="slider-group">
+            <label>夾爪角度 (70關閉 - 160打開): <span id="claw_val">95</span></label>
+            <input type="range" id="car_claw" min="70" max="160" value="95" oninput="document.getElementById('claw_val').innerText = this.value" onchange="sendCmd('C:' + this.value)">
+        </div>
+
+        <div class="slider-group">
+            <label>手臂角度 (20放平 - 170抬起): <span id="arm_val">20</span></label>
+            <input type="range" id="car_arm" min="20" max="170" value="20" oninput="document.getElementById('arm_val').innerText = this.value" onchange="sendCmd('A:' + this.value)">
+        </div>
+
+        <h3 style="text-align: center; margin-top: 20px; color: white;">八路循線模組狀態</h3>
+        <div class="sensor-container" id="sensor_box">
+            <div class="sensor-dot" id="s1">1</div>
+            <div class="sensor-dot" id="s2">2</div>
+            <div class="sensor-dot" id="s3">3</div>
+            <div class="sensor-dot" id="s4">4</div>
+            <div class="sensor-dot" id="s5">5</div>
+            <div class="sensor-dot" id="s6">6</div>
+            <div class="sensor-dot" id="s7">7</div>
+            <div class="sensor-dot" id="s8">8</div>
+        </div>
+    </div>
+</div>
+
+<div class="footer">
+    版權所有 &copy; 2026 <a href="https://pandapanda6666.github.io" target="_blank">PandaPanda的AI日常</a> All Rights Reserved.
+</div>
+
+<script>
+    let socket = null;
+    let currentServerUrl = "";
+
+    async function fetchUrlAndConnect() {
+        const statusBox = document.getElementById('conn_status');
+        statusBox.innerText = "正在讀取 server_url.txt...";
+        statusBox.className = "status-box";
+
+        try {
+            // 加上時間戳記避免瀏覽器快取到舊的網址
+            const response = await fetch('server_url.txt?t=' + new Date().getTime());
+            if (!response.ok) throw new Error('找不到 server_url.txt，請確認檔案已上傳至同目錄');
+            
+            const text = await response.text();
+            currentServerUrl = text.trim();
+            
+            if (!currentServerUrl.startsWith('http')) throw new Error('讀取到的內容不是有效的網址');
+
+            statusBox.innerText = `取得網址: ${currentServerUrl}\n正在連線...`;
+            connectSocket(currentServerUrl);
+
+        } catch (err) {
+            statusBox.innerText = `錯誤: ${err.message}`;
+            statusBox.className = "status-box status-err";
+        }
+    }
+
+    function connectSocket(url) {
+        const statusBox = document.getElementById('conn_status');
+        const controlSec = document.getElementById('control_section');
+        const cameraStream = document.getElementById('camera_stream');
+
+        if (socket) socket.disconnect();
+
+        socket = io(url, {
+            reconnectionAttempts: 5,
+            timeout: 10000
+        });
+
+        socket.on('connect', () => {
+            statusBox.innerText = "連線成功！";
+            statusBox.className = "status-box status-ok";
+            controlSec.style.opacity = "1";
+            controlSec.style.pointerEvents = "auto";
+            
+            // 加上時間戳記避免快取，自動載入相機串流
+            cameraStream.src = url + '/video_feed?' + new Date().getTime();
+        });
+
+        socket.on('disconnect', () => {
+            statusBox.innerText = "伺服器已斷線。";
+            statusBox.className = "status-box status-err";
+            controlSec.style.opacity = "0.5";
+            controlSec.style.pointerEvents = "none";
+            cameraStream.src = "";
+            cameraStream.alt = "與伺服器斷線，無法顯示畫面";
+        });
+
+        socket.on('connect_error', () => {
+            statusBox.innerText = "連線失敗，伺服器可能未啟動或網址已失效。";
+            statusBox.className = "status-box status-err";
+        });
+
+        socket.on('status', (data) => {
+            if (data.line) {
+                for (let i = 0; i < 8; i++) {
+                    const dot = document.getElementById(`s${i+1}`);
+                    if (data.line[i] === '1') {
+                        dot.classList.add('sensor-on');
+                    } else {
+                        dot.classList.remove('sensor-on');
+                    }
+                }
+            }
+        });
+    }
+
+    function sendCmd(cmd) {
+        if (socket && socket.connected) {
+            socket.emit('cmd', cmd);
+        }
+    }
+
+    // 鍵盤操控綁定
+    document.addEventListener('keydown', (e) => {
+        if(document.activeElement.tagName === 'INPUT') return;
+        const key = e.key.toLowerCase();
+        if (key === 'w') sendCmd('M:F');
+        if (key === 'a') sendCmd('M:L');
+        if (key === 's') sendCmd('M:B');
+        if (key === 'd') sendCmd('M:R');
+    });
+
+    document.addEventListener('keyup', (e) => {
+        if(document.activeElement.tagName === 'INPUT') return;
+        const key = e.key.toLowerCase();
+        if (['w','a','s','d'].includes(key)) sendCmd('M:S');
+    });
+
+    // 網頁載入完成後自動執行讀取與連線
+    window.onload = () => {
+        fetchUrlAndConnect();
+    };
+</script>
+
+</body>
+</html>
