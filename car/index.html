@@ -42,6 +42,7 @@
             font-weight: bold;
             font-size: 16px;
             transition: background 0.2s;
+            margin: 5px;
         }
         button:hover { background-color: #2563eb; }
         button:active { background-color: #1d4ed8; }
@@ -57,6 +58,18 @@
         }
         .status-ok { color: #4ade80; }
         .status-err { color: #f87171; }
+
+        /* 預設模式區 */
+        .preset-container {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .btn-monitor { background-color: #8b5cf6; }
+        .btn-monitor:hover { background-color: #7c3aed; }
+        .btn-test { background-color: #10b981; }
+        .btn-test:hover { background-color: #059669; }
 
         /* 影像串流區 */
         .video-container {
@@ -103,7 +116,7 @@
         .slider-group label { display: block; margin-bottom: 5px; font-weight: bold; }
         input[type=range] { width: 100%; cursor: pointer; }
         
-        /* 循線顯示區 */
+        /* 循線與顏色顯示區 */
         .sensor-container {
             display: flex;
             justify-content: center;
@@ -125,6 +138,17 @@
         }
         .sensor-on { background-color: #3b82f6; }
 
+        .color-result {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #0f172a;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+            border: 1px solid #475569;
+        }
+
         .footer {
             text-align: center;
             padding: 15px;
@@ -144,9 +168,14 @@
     <h1>車輛遠端控制面板</h1>
     
     <div class="section" style="text-align: center;">
-        <h2>連線狀態</h2>
+        <h2>連線狀態與模式設定</h2>
         <div id="conn_status" class="status-box">準備連線中...</div>
         <button onclick="fetchUrlAndConnect()" style="margin-top: 15px;">重新整理並連線</button>
+        
+        <div class="preset-container" id="preset_section" style="opacity: 0.5; pointer-events: none;">
+            <button class="btn-monitor" onclick="setMode('MONITOR')">監視器模式</button>
+            <button class="btn-test" onclick="setMode('TEST')">小車測試模式</button>
+        </div>
     </div>
 
     <div class="section" id="control_section" style="opacity: 0.5; pointer-events: none;">
@@ -186,7 +215,11 @@
             <input type="range" id="car_arm" min="20" max="170" value="20" oninput="document.getElementById('arm_val').innerText = this.value" onchange="sendCmd('A:' + this.value)">
         </div>
 
-        <h3 style="text-align: center; margin-top: 20px; color: white;">八路循線模組狀態</h3>
+        <h3 style="text-align: center; margin-top: 20px; color: white;">感測器狀態</h3>
+        <div class="color-result" id="color_display">
+            TCS顏色辨識：等待資料...
+        </div>
+
         <div class="sensor-container" id="sensor_box">
             <div class="sensor-dot" id="s1">1</div>
             <div class="sensor-dot" id="s2">2</div>
@@ -214,7 +247,6 @@
         statusBox.className = "status-box";
 
         try {
-            // 加上時間戳記避免瀏覽器快取到舊的網址
             const response = await fetch('server_url.txt?t=' + new Date().getTime());
             if (!response.ok) throw new Error('找不到 server_url.txt，請確認檔案已上傳至同目錄');
             
@@ -235,6 +267,7 @@
     function connectSocket(url) {
         const statusBox = document.getElementById('conn_status');
         const controlSec = document.getElementById('control_section');
+        const presetSec = document.getElementById('preset_section');
         const cameraStream = document.getElementById('camera_stream');
 
         if (socket) socket.disconnect();
@@ -249,8 +282,9 @@
             statusBox.className = "status-box status-ok";
             controlSec.style.opacity = "1";
             controlSec.style.pointerEvents = "auto";
+            presetSec.style.opacity = "1";
+            presetSec.style.pointerEvents = "auto";
             
-            // 加上時間戳記避免快取，自動載入相機串流
             cameraStream.src = url + '/video_feed?' + new Date().getTime();
         });
 
@@ -259,6 +293,8 @@
             statusBox.className = "status-box status-err";
             controlSec.style.opacity = "0.5";
             controlSec.style.pointerEvents = "none";
+            presetSec.style.opacity = "0.5";
+            presetSec.style.pointerEvents = "none";
             cameraStream.src = "";
             cameraStream.alt = "與伺服器斷線，無法顯示畫面";
         });
@@ -280,6 +316,12 @@
                 }
             }
         });
+
+        socket.on('color_status', (data) => {
+            const colorBox = document.getElementById('color_display');
+            colorBox.innerHTML = `TCS辨識結果: <span style="color:${data.color}; text-shadow: 1px 1px 2px black;">${data.name}</span> (特徵: ${data.rgb})`;
+            colorBox.style.borderLeft = `5px solid ${data.color}`;
+        });
     }
 
     function sendCmd(cmd) {
@@ -288,7 +330,18 @@
         }
     }
 
-    // 鍵盤操控綁定
+    function setMode(mode) {
+        if (mode === 'MONITOR') {
+            if(confirm('切換至「監視器模式」？\n(開啟電腦攝影機，關閉循線與顏色辨識)')) {
+                sendCmd('PRESET:MONITOR');
+            }
+        } else if (mode === 'TEST') {
+            if(confirm('切換至「小車測試模式」？\n(關閉電腦攝影機，開啟所有感測器與控制)')) {
+                sendCmd('PRESET:TEST');
+            }
+        }
+    }
+
     document.addEventListener('keydown', (e) => {
         if(document.activeElement.tagName === 'INPUT') return;
         const key = e.key.toLowerCase();
@@ -304,7 +357,6 @@
         if (['w','a','s','d'].includes(key)) sendCmd('M:S');
     });
 
-    // 網頁載入完成後自動執行讀取與連線
     window.onload = () => {
         fetchUrlAndConnect();
     };
