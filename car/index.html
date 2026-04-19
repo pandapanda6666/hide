@@ -304,6 +304,17 @@
             statusBox.className = "status-box status-err";
         });
 
+        socket.on('upload_status', (data) => {
+            statusBox.innerText = "伺服器回報: " + data.msg;
+            if (data.msg.includes('成功')) {
+                statusBox.className = "status-box status-ok";
+            } else if (data.msg.includes('失敗') || data.msg.includes('錯誤')) {
+                statusBox.className = "status-box status-err";
+            } else {
+                statusBox.className = "status-box";
+            }
+        });
+
         socket.on('status', (data) => {
             if (data.line) {
                 for (let i = 0; i < 8; i++) {
