@@ -1,4 +1,4 @@
-﻿import os, sys, ctypes, time, subprocess, threading, shutil
+import os, sys, ctypes, time, subprocess, threading, shutil
 import winreg
 try:
   import psutil; import pynput
